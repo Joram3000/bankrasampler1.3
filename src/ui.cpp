@@ -54,18 +54,6 @@ bool initUi() {
   return true;
 }
 
-void updateUi(bool playing, const String& filename) {
-  static bool lastPlayingState = false;
-  static String lastFileName = "";
-  String fn = filename;
-  if (fn.isEmpty()) fn = "-";
-  if (playing != lastPlayingState || fn != lastFileName) {
-    lastPlayingState = playing;
-    lastFileName = fn;
-    scopeDisplay.updateStatus(playing, fn);
-  }
-}
-
 U8G2* getU8g2Display() {
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
   return &display;

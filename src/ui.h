@@ -9,9 +9,6 @@ extern ScopeI2SStream scopeI2s;
 // Initialize display and scope. Returns true on success.
 bool initUi();
 
-// Update UI state (called from main loop)
-void updateUi(bool playing, const String& filename);
-
 // Expose the underlying display objects so other modules (e.g. settings
 // screens) can draw to the display using the same hardware instance. Each
 // accessor returns nullptr when its corresponding backend is not active.
