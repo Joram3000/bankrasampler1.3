@@ -17,10 +17,11 @@
 #include "freertos/semphr.h"
 #include "input/mux.h"
 
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-  #include "SettingsScreenU8g2.h"
-#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
-  #include "SettingsScreenAdafruit.h"
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+#include "SettingsScreenAdafruit.h"
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+#include "SettingsScreenU8g2.h"
+#include "InitializationScreenU8g2.h"
 #endif
 
 AudioInfo info(44100, 2, 16);
@@ -34,7 +35,6 @@ static LowPassFilter<float> filterEffect;
 static Delay delayEffect;
 static FilteredDelayMixerStream mixer;
 
-
 // State
 int currentSample = -1;
 // String currentSamplePath = "";
@@ -42,21 +42,69 @@ static uint32_t lastVolSample = 0;
 static float lastVol = -1.0f;
 static SemaphoreHandle_t displayMutex = nullptr;
 static int copiedZeroCount = 0;
-static ISettingsScreen* settingsScreen = nullptr;
 
+// settings States
+float currentFilterCutoffHz = LOW_PASS_CUTOFF_HZ;
+float currentFilterQ = LOW_PASS_Q;
+float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
+float currentDelayDepth = DEFAULT_DELAY_DEPTH;
+float currentDelayFeedback = DEFAULT_DELAY_FEEDBACK;
+bool currentCompEnabled = MASTER_COMPRESSOR_ENABLED;
+
+static ISettingsScreen* settingsScreen = nullptr;
+static InitializationScreenU8g2* initializationScreen = nullptr;
+enum class OperatingMode { Performance, Settings, Initializing };
+OperatingMode currentMode = OperatingMode::Initializing;
+
+// Settings mode switch state
+bool settingsModeRawState = false;
+bool settingsModeDebouncedState = false;
+uint32_t settingsModeLastDebounceTime = 0;
 
 // --- Buttons ---
-const int NUM_BUTTONS = sizeof(BUTTON_PINS) / sizeof(BUTTON_PINS[0]);
-
-Button buttons[NUM_BUTTONS] = {
-  Button(BUTTON_PINS[0], SAMPLE_PATHS[0], true, false),
-  Button(BUTTON_PINS[1], SAMPLE_PATHS[1], true, false),
-  Button(BUTTON_PINS[2], SAMPLE_PATHS[2], true, false)
+Button buttons[BUTTON_COUNT] = {
+  Button(BUTTON_CHANNEL_ON_MUX[0], SAMPLE_PATHS[0]),
+  Button(BUTTON_CHANNEL_ON_MUX[1], SAMPLE_PATHS[1]),
+  Button(BUTTON_CHANNEL_ON_MUX[2], SAMPLE_PATHS[2]),
+  Button(BUTTON_CHANNEL_ON_MUX[3], SAMPLE_PATHS[3]),
+  Button(BUTTON_CHANNEL_ON_MUX[4], SAMPLE_PATHS[4]),
+  Button(BUTTON_CHANNEL_ON_MUX[5], SAMPLE_PATHS[5]),
 };
-static bool prevLatched[NUM_BUTTONS];
+
+static bool prevLatched[BUTTON_COUNT] = { false, false, false, false, false, false };
+
+
+void playSample(int index);
+void stopSample(int index);
+
+static int findButtonIndexForChannel(uint8_t channel) {
+  for (int i = 0; i < BUTTON_COUNT; ++i) {
+    if (BUTTON_CHANNEL_ON_MUX[i] == channel) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+static void onMuxChange(uint8_t channel, bool active) {
+  int index = findButtonIndexForChannel(channel);
+  if (index < 0) return;
+
+  if (active) {
+    playSample(index);
+  } else {
+    stopSample(index);
+  }
+
+  if (DEBUGMODE) {
+    Serial.print(F("  MUX->CHANNEL "));
+    Serial.println(channel);
+
+  }
+}
 
 void playSample(int index) {
-  if (index < 0 || index >= NUM_BUTTONS) return;
+  if (index < 0 || index >= BUTTON_COUNT) return;
   // If same sample already active, restart it
   currentSample = index;
   player.stop();
@@ -66,30 +114,23 @@ void playSample(int index) {
   // currentSamplePath = full;
   if (DEBUGMODE) {
     Serial.print(F("PLAY: "));
-    Serial.println(SAMPLE_PATHS[index]);
+    Serial.print(SAMPLE_PATHS[index]);
     }
 }
 
 void stopSample(int index) {
-  if (index < 0 || index >= NUM_BUTTONS) return;
+  if (index < 0 || index >= BUTTON_COUNT) return;
   if (currentSample != index) return;
   player.setActive(false);
   currentSample = -1;
   if (DEBUGMODE) {
     Serial.print(F("STOP: "));
-    Serial.println(SAMPLE_PATHS[index]);    
+    Serial.print(SAMPLE_PATHS[index]);    
   }
 }
 
-
 void initPlayer() {
-  // ---- Initialize player ----
   player.setVolume(1.0);
-  // route output to the mixer so filter+delay kunnen worden toegepast
-  // player -> mixer -> scopeI2s
-  // Nederlands: we zetten hier de output van de sampler op de mixer zodat
-  // de mixer het signaal kan bewerken (filter + delay) voordat het naar
-  // de scope of audio-uitgang gaat.
   player.setOutput(mixer);
   player.setAutoNext(false);
   player.setSilenceOnInactive(true); // doet dit iets? When enabled, writes zeros while inactive to keep sinks alive
@@ -100,13 +141,6 @@ void initPlayer() {
   
 }
 
-void initButtons() {
-  for (int i = 0; i < NUM_BUTTONS; ++i) {
-    buttons[i].begin();
-    buttons[i].sync(millis());
-    prevLatched[i] = buttons[i].isLatched();
-  }
-}
 void initAudio() {
   auto config = scopeI2s.defaultConfig(TX_MODE);
   config.copyFrom(info);
@@ -118,7 +152,6 @@ void initAudio() {
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
   } else {
-
     scopeI2s.setAudioInfo(info);
   }
 
@@ -137,13 +170,14 @@ void initAudio() {
 
 
   mixer.setAudioInfo(info);
-  // Zet output van mixer naar scope; mixer ontvangt data via player.write()
   mixer.setOutput(scopeI2s);
-  // Geef referenties door aan de mixer
   mixer.setFilter(filterEffect);
   mixer.setDelay(delayEffect);
-  // mix levels
   mixer.setMix(1.0f, 0.9f);
+
+  if(DEBUGMODE) {
+    Serial.println("Audio initialized.");
+  }
 }
 void initSd() {
   SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SD_CS_PIN);
@@ -151,26 +185,130 @@ void initSd() {
     Serial.println("Card failed, or not present");
     while (1);
   }
-}
-void initDisplay() {
-  if (!initUi()) {
-    for (;;) ;
+  if(DEBUGMODE) {
+    Serial.println("SD card initialized.");
   }
 }
 
+void initDisplay() {
+  if (!initUi()) {
+    for (;;) ;
+  } else if (DEBUGMODE) {
+    Serial.println("Display initialized.");
+  }
 
-void checkButtons() {
-  uint32_t now = millis();
-  for (int i = 0; i < NUM_BUTTONS; ++i) {
-    if (buttons[i].update(now)) {
-      playSample(i);
+  if (currentMode == OperatingMode::Initializing) {
+    // Show a short initialization screen animation (1s) instead of a blind delay.
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+    if (auto* display = getU8g2Display()) {
+      if (!initializationScreen) {
+        initializationScreen = new InitializationScreenU8g2(*display, INIT_SCREEN_MESSAGE, INIT_SCREEN_DURATION_MS);
+        initializationScreen->begin();
+      }
+      // ensure the screen shows for the configured duration
+      initializationScreen->enter();
+      unsigned long start = millis();
+      unsigned long showMs = initializationScreen->getDurationMs();
+      
+      while (millis() - start < showMs) {
+        initializationScreen->update();
+        delay(200);
+      }
+      initializationScreen->exit();
     }
-    bool latched = buttons[i].isLatched();
-    if (prevLatched[i] && !latched) {
-      // On release: stop the sample so next press starts from the beginning
-      stopSample(i);
+#else
+    delay(1000);
+#endif
+  Serial.print("Init done, switching to Performance mode");
+    currentMode = OperatingMode::Performance;
+  }
+}
+
+static void initSettingsScreen() {
+  if (settingsScreen) return;
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+  if (auto* display = getU8g2Display()) {
+    settingsScreen = new SettingsScreenU8g2(*display);
+  } else {
+    Serial.println("Settings screen unavailable: no U8G2 display detected");
+    return;
+  }
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+  if (auto* display = getAdafruitDisplay()) {
+    settingsScreen = new SettingsScreenAdafruit(*display);
+  } else {
+    Serial.println("Settings screen unavailable: no Adafruit SSD1306 display detected");
+    return;
+  }
+#else
+  return;
+#endif
+  settingsScreen->begin();
+  settingsScreen->setZoomCallback([](float zoomFactor) {
+    setScopeHorizZoom(zoomFactor);
+  });
+  settingsScreen->setDelayTimeCallback([](float durationMs) {
+    currentDelayTimeMs = durationMs;
+    delayEffect.setDuration(static_cast<uint32_t>(durationMs));
+  });
+  
+  settingsScreen->setDelayFeedbackCallback([](float feedback) {
+    currentDelayFeedback = feedback;
+    delayEffect.setFeedback(feedback);
+  });  
+  settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
+  settingsScreen->setDelayTimeMs(currentDelayTimeMs);
+  settingsScreen->setDelayFeedback(currentDelayFeedback);
+  settingsScreen->setFilterCutoffHz(currentFilterCutoffHz);
+  settingsScreen->setFilterQ(currentFilterQ);
+  settingsScreen->setCompressorEnabled(currentCompEnabled);  
+}
+
+void initSettingsModeSwitch() {
+  pinMode(SWITCH_PIN_SETTINGS_MODE, INPUT);
+  bool settingsModeInit = (digitalRead(SWITCH_PIN_SETTINGS_MODE) == LOW);
+  settingsModeRawState = settingsModeDebouncedState = settingsModeInit;
+
+  if(DEBUGMODE) {
+    Serial.print("Settings mode switch initialized to: ");
+    Serial.println(settingsModeDebouncedState ? "ON" : "OFF");
+  }
+} 
+
+static uint32_t settingsModeLastPoll = 0;
+
+static void checkSettingsMode(uint32_t now) {
+  if ((now - settingsModeLastPoll) < SETTINGS_POLL_INTERVAL_MS) return;
+  settingsModeLastPoll = now;
+
+  bool raw = (digitalRead(SWITCH_PIN_SETTINGS_MODE) == LOW);
+  if (raw != settingsModeRawState) {
+    settingsModeRawState = raw;
+    settingsModeLastDebounceTime = now;
+  }
+
+  if ((now - settingsModeLastDebounceTime) >= SETTINGS_DEBOUNCE_MS && settingsModeDebouncedState != settingsModeRawState) {
+    settingsModeDebouncedState = settingsModeRawState;
+    settingsModeDebouncedState ? currentMode = OperatingMode::Settings : currentMode = OperatingMode::Performance;
+    if (DEBUGMODE) {
+      Serial.print(F("Settings mode -> "));
+      Serial.println(settingsModeDebouncedState ? F("ON") : F("OFF"));
     }
-    prevLatched[i] = latched;
+
+  }
+}
+
+static void updateSettingsScreenUi() {
+  if (!settingsScreen)
+  Serial.print("In settings mode loop without settings screen\n");
+ return;
+  if (displayMutex) {
+    if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+      settingsScreen->update();
+      xSemaphoreGive(displayMutex);
+    }
+  } else {
+    settingsScreen->update();
   }
 }
 
@@ -197,11 +335,13 @@ void setup() {
 
   initSd();
   initAudio();
-  initPlayer();
-  initButtons();
+  initPlayer();  
   initDisplay();
-  initInputMux();
-  
+  setMuxChangeCallback(onMuxChange); // moet dit hier?
+  initMuxScanner(5000, true);
+  initSettingsScreen();
+  loadSettingsFromSd(settingsScreen); // werkt dit al?
+  initSettingsModeSwitch();
 
   if (auto mutexPtr = static_cast<SemaphoreHandle_t*>(getDisplayMutex())) {
     displayMutex = *mutexPtr;
@@ -214,46 +354,44 @@ void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
   if (copied == 0) {
-    // Als er geen nieuwe data binnenkomt, toch de delay-tail blijven
-    // uitsturen zodat de reverb hoorbaar blijft.
+      // Als er geen nieuwe data binnenkomt, toch de delay-tail blijven
+      // uitsturen zodat de reverb hoorbaar blijft.
     mixer.renderTailFrames(64);
-  }
-
-  if (!mixer.tailActive()) {
-    scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
-  }
-
-  // End-of-sample handling: if we observe no copied bytes for a few
-  // consecutive loops, consider the sample finished and stop the player.
-  // Some player backends may still report isActive() == true briefly even
-  // when no data is copied (fade/drain), so rely on a short zero-counter
-  // to avoid missed ends.
-  if (copied == 0) {
-    ++copiedZeroCount;
-  } else {
-    copiedZeroCount = 0;
-  }
-
-  if (currentSample >= 0 && copied == 0 && (copiedZeroCount >= COPIED_ZERO_THRESHOLD || !player.isActive())) {
-    if (DEBUGMODE) {
-      Serial.print(F("END: "));
-      Serial.println(SAMPLE_PATHS[currentSample]);
     }
-    // Ensure the player is stopped; silence-on-inactive handles zero output.
-    //  player.stop();
-    player.setActive(false);
-    currentSample = -1;
-    copiedZeroCount = 0;
-  }
-
+    
+    if (!mixer.tailActive()) {
+      scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
+    }
+    
+    // End-of-sample handling: if we observe no copied bytes for a few
+    // consecutive loops, consider the sample finished and stop the player.
+    // Some player backends may still report isActive() == true briefly even
+    // when no data is copied (fade/drain), so rely on a short zero-counter
+    // to avoid missed ends.
+    if (copied == 0) {
+      ++copiedZeroCount;
+    } else {
+      copiedZeroCount = 0;
+    }
+    
+    if (currentSample >= 0 && copied == 0 && (copiedZeroCount >= COPIED_ZERO_THRESHOLD || !player.isActive())) {
+      if (DEBUGMODE) {
+        Serial.print(F("END: "));
+        Serial.println(SAMPLE_PATHS[currentSample]);
+      }
+      // Ensure the player is stopped; silence-on-inactive handles zero output.
+      //  player.stop();
+      player.setActive(false);
+      currentSample = -1;
+      copiedZeroCount = 0;
+    }
+    
+    
+    checkVolume(now); 
   
-  checkButtons();
-  checkVolume(now); 
 
-  if (settingsScreen) {
-    settingsScreen->update();
-  }
-
+  muxScanTick();
+  checkSettingsMode(now);
   
 }
 
