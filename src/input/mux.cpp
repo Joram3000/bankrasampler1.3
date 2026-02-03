@@ -23,10 +23,6 @@ void Sn74hc151Mux::begin() {
   if (INPUT_MUX_PIN_A >= 0) pinMode(INPUT_MUX_PIN_A, OUTPUT);
   if (INPUT_MUX_PIN_B >= 0) pinMode(INPUT_MUX_PIN_B, OUTPUT);
   if (INPUT_MUX_PIN_C >= 0) pinMode(INPUT_MUX_PIN_C, OUTPUT);
-  if (INPUT_MUX_PIN_EN >= 0) {
-    pinMode(INPUT_MUX_PIN_EN, OUTPUT);
-    digitalWrite(INPUT_MUX_PIN_EN, LOW);
-  }
   if (INPUT_MUX_PIN_Y >= 0) pinMode(INPUT_MUX_PIN_Y, INPUT);
   selectChannel(0);
   initialized = true;

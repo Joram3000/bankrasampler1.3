@@ -12,15 +12,13 @@
 // -----------------------------------------------------------------------------
 #define DISPLAY_DRIVER_ADAFRUIT_SSD1306 0
 #define DISPLAY_DRIVER_U8G2_SSD1306     1
-
 // Pick which display backend to compile (see ui.cpp for usage)
 #define DISPLAY_DRIVER DISPLAY_DRIVER_U8G2_SSD1306
+
 constexpr int DISPLAY_WIDTH  = 128;
 constexpr int DISPLAY_HEIGHT = 64;
-
 constexpr int NUM_WAVEFORM_SAMPLES = DISPLAY_WIDTH;
 constexpr uint8_t DISPLAY_I2C_ADDRESS = 0x3C;
-
 constexpr bool DISPLAY_INVERT_COLORS = false;
 
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
@@ -50,12 +48,11 @@ constexpr const char* SAMPLE_PATHS[] = {
     "/5.wav",
     "/6.wav"
 };
-constexpr int NUM_SAMPLES = sizeof(SAMPLE_PATHS) / sizeof(SAMPLE_PATHS[0]);
-
+// dit zijn channels op de input-mux (SN74HC151)
 constexpr std::array<uint8_t, 6> BUTTON_CHANNELS = { 3, 2,4, 5, 6, 7};
-
 constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND = 1;
 constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 0;
+// constexpr int NUM_SAMPLES = sizeof(SAMPLE_PATHS) / sizeof(SAMPLE_PATHS[0]);
 constexpr size_t BUTTON_COUNT = BUTTON_CHANNELS.size();
 constexpr bool BUTTONS_ACTIVE_LOW = true;
 
@@ -93,7 +90,6 @@ constexpr int INPUT_MUX_PIN_A = 13;
 constexpr int INPUT_MUX_PIN_B = 4;
 constexpr int INPUT_MUX_PIN_C = 16;
 constexpr int INPUT_MUX_PIN_Y = 17;
-constexpr int INPUT_MUX_PIN_EN = -1; // tie to GND on PCB if < 0
 constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 5;
 
 // -----------------------------------------------------------------------------
@@ -124,8 +120,3 @@ constexpr float LOW_PASS_Q_STEP     = 0.05f;
 
 // Master bus compression (gentle glue on final output)
 constexpr bool     MASTER_COMPRESSOR_ENABLED          = true;
-constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MS        = 12;
-constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MS       = 70;
-constexpr uint16_t MASTER_COMPRESSOR_HOLD_MS          = 12;
-constexpr uint8_t  MASTER_COMPRESSOR_THRESHOLD_PERCENT= 18;  // relative to full-scale
-constexpr float    MASTER_COMPRESSOR_RATIO            = 0.75f; // 0..1 (lower = stronger)

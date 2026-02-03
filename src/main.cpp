@@ -6,30 +6,43 @@
 #include "AudioTools/AudioCodecs/CodecWAV.h"
 #include <ScopeI2SStream.h>
 #include <algorithm>
-#include <cstring>
-#include <vector>
 #include "AudioTools/CoreAudio/AudioEffects/AudioEffects.h"
+#include "audio_mixer.h"
 #include "config.h"
-#include "input.h"
+#include "input/button.h"
 #include "ui.h"
+#include "settings_storage.h"
+#include "SettingsScreen.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "input/mux.h"
+
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+  #include "SettingsScreenU8g2.h"
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+  #include "SettingsScreenAdafruit.h"
+#endif
 
 AudioInfo info(44100, 2, 16);
-
 
 // ===== Single audio player =====
 AudioSourceSD source("/", "wav");
 WAVDecoder decoder;
 AudioPlayer player(source, scopeI2s, decoder);
 
+static LowPassFilter<float> filterEffect;
+static Delay delayEffect;
+static FilteredDelayMixerStream mixer;
+
+
 // State
 int currentSample = -1;
-String currentSamplePath = "";
+// String currentSamplePath = "";
 static uint32_t lastVolSample = 0;
 static float lastVol = -1.0f;
 static SemaphoreHandle_t displayMutex = nullptr;
 static int copiedZeroCount = 0;
+static ISettingsScreen* settingsScreen = nullptr;
 
 
 // --- Buttons ---
@@ -49,8 +62,8 @@ void playSample(int index) {
   player.stop();
   player.setPath(SAMPLE_PATHS[index]);
   player.setActive(true);
-    String full = String(SAMPLE_PATHS[index]);
-  currentSamplePath = full;
+  // String full = String(SAMPLE_PATHS[index]);
+  // currentSamplePath = full;
   if (DEBUGMODE) {
     Serial.print(F("PLAY: "));
     Serial.println(SAMPLE_PATHS[index]);
@@ -60,11 +73,11 @@ void playSample(int index) {
 void stopSample(int index) {
   if (index < 0 || index >= NUM_BUTTONS) return;
   if (currentSample != index) return;
-  player.stop();
+  player.setActive(false);
   currentSample = -1;
   if (DEBUGMODE) {
     Serial.print(F("STOP: "));
-    Serial.println(SAMPLE_PATHS[index]);
+    Serial.println(SAMPLE_PATHS[index]);    
   }
 }
 
@@ -72,17 +85,21 @@ void stopSample(int index) {
 void initPlayer() {
   // ---- Initialize player ----
   player.setVolume(1.0);
-  // route player -> volume -> scopeI2s (which writes to I2S hardware)
-  player.setOutput(scopeI2s);
+  // route output to the mixer so filter+delay kunnen worden toegepast
+  // player -> mixer -> scopeI2s
+  // Nederlands: we zetten hier de output van de sampler op de mixer zodat
+  // de mixer het signaal kan bewerken (filter + delay) voordat het naar
+  // de scope of audio-uitgang gaat.
+  player.setOutput(mixer);
   player.setAutoNext(false);
-  
-  player.setSilenceOnInactive(true);
-  player.setDelayIfOutputFull(1);
+  player.setSilenceOnInactive(true); // doet dit iets? When enabled, writes zeros while inactive to keep sinks alive
+  player.setDelayIfOutputFull(1); // Sets delay (ms) to wait when output is ful
   player.setFadeTime(BUTTON_FADE_MS);
   player.begin();
   player.stop();
   
 }
+
 void initButtons() {
   for (int i = 0; i < NUM_BUTTONS; ++i) {
     buttons[i].begin();
@@ -98,8 +115,35 @@ void initAudio() {
   config.pin_data = I2S_PIN_DATA;
   config.i2s_format = I2S_STD_FORMAT;
 
-  scopeI2s.begin(config);
-  scopeI2s.setAudioInfo(info);
+ if (!scopeI2s.begin(config)) {
+    Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
+  } else {
+
+    scopeI2s.setAudioInfo(info);
+  }
+
+  filterEffect.begin(7000, info.sample_rate, 0.5f); // cutoff 7kHz, Q=0.5
+
+  delayEffect.setSampleRate(info.sample_rate);
+  delayEffect.setFeedback(0.8f); // feedback in %
+  delayEffect.setDepth(0.9f); // depth in %
+  delayEffect.setDuration(300); // ms delay
+  delayEffect.setActive(true);
+
+  // Let the scope visualization know about the delay settings so it can
+  // render visual echoes.  Forward sample rate, duration and feedback.
+  setScopeDelaySampleRate(info.sample_rate);
+  setScopeDelayParams(static_cast<float>(delayEffect.getDuration()), delayEffect.getFeedback());
+
+
+  mixer.setAudioInfo(info);
+  // Zet output van mixer naar scope; mixer ontvangt data via player.write()
+  mixer.setOutput(scopeI2s);
+  // Geef referenties door aan de mixer
+  mixer.setFilter(filterEffect);
+  mixer.setDelay(delayEffect);
+  // mix levels
+  mixer.setMix(1.0f, 0.9f);
 }
 void initSd() {
   SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SD_CS_PIN);
@@ -113,8 +157,6 @@ void initDisplay() {
     for (;;) ;
   }
 }
-
-
 
 
 void checkButtons() {
@@ -144,8 +186,7 @@ if ((now - lastVolSample) >= VOL_READ_INTERVAL_MS) {
     // simple deadband + smoothing
     if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.01f) {
       lastVol = norm;
-      // volume.setVolume(lastVol);
-        player.setVolume(lastVol);
+        player.setVolume(lastVol); // we zetten gewoon volume op de sampler
     }
   }
 }
@@ -155,14 +196,12 @@ void setup() {
   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Warning);
 
   initSd();
-
   initAudio();
-
   initPlayer();
-
   initButtons();
-
   initDisplay();
+  initInputMux();
+  
 
   if (auto mutexPtr = static_cast<SemaphoreHandle_t*>(getDisplayMutex())) {
     displayMutex = *mutexPtr;
@@ -174,7 +213,15 @@ void setup() {
 void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
+  if (copied == 0) {
+    // Als er geen nieuwe data binnenkomt, toch de delay-tail blijven
+    // uitsturen zodat de reverb hoorbaar blijft.
+    mixer.renderTailFrames(64);
+  }
 
+  if (!mixer.tailActive()) {
+    scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
+  }
 
   // End-of-sample handling: if we observe no copied bytes for a few
   // consecutive loops, consider the sample finished and stop the player.
@@ -193,20 +240,19 @@ void loop() {
       Serial.println(SAMPLE_PATHS[currentSample]);
     }
     // Ensure the player is stopped; silence-on-inactive handles zero output.
-    player.stop();
+    //  player.stop();
+    player.setActive(false);
     currentSample = -1;
     copiedZeroCount = 0;
   }
 
-  // Zorg voor een constante scope-update: als er geen audio doorstroomt,
-  // voed de scope met stilte zodat de waveform altijd blijft lopen.
-  if (!player.isActive() || copied == 0) {
-    scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
-  }
-
-
+  
   checkButtons();
   checkVolume(now); 
+
+  if (settingsScreen) {
+    settingsScreen->update();
+  }
 
   
 }
