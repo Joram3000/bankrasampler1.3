@@ -125,5 +125,5 @@ constexpr bool     MASTER_COMPRESSOR_ENABLED    = true;
 #endif
 
 #ifndef INIT_SCREEN_DURATION_MS
-#define INIT_SCREEN_DURATION_MS 6000
+#define INIT_SCREEN_DURATION_MS 3000
 #endif
