@@ -43,7 +43,7 @@ class ScopeDisplayU8g2 {
         if (xSemaphoreTake(displayMutex, portMAX_DELAY)) {
           display->clearBuffer();
           renderWaveform();
-          renderStatus();
+      
           display->sendBuffer();
           xSemaphoreGive(displayMutex);
         }
@@ -72,7 +72,11 @@ class ScopeDisplayU8g2 {
       int windowSize = std::max(1, static_cast<int>(ceilf((displayedSamples / (float)kScreenWidth))));
       int halfWin = (windowSize - 1) / 2;
 
-      float prevYf = isfinite(lastDisplayY) ? lastDisplayY : NAN;
+  float prevYf = isfinite(lastDisplayY) ? lastDisplayY : NAN;
+  // Separate previous Y values for the additional overlays so each can be
+  // smoothed independently without affecting the main waveform.
+  float prevYfTwoThird = NAN;
+  float prevYfThird = NAN;
 
       for (int x = 0; x < kScreenWidth; ++x) {
         float samplePos = startIndex + x * step;
@@ -91,7 +95,11 @@ class ScopeDisplayU8g2 {
         float sampleNext = static_cast<float>(waveformBuffer[nextIdx]);
         float val = sampleCenter * (1.0f - frac) + sampleNext * frac;
 
-        float yf = scopeCenter - (val * ((kScreenHeight / 2) * vertScale) / 32768.0f);
+  // Compute base amplitude once and reuse for overlays (1.0, 2/3, 1/3)
+  float baseAmp = (val * ((kScreenHeight / 2) * vertScale) / 32768.0f);
+  float yf = scopeCenter - baseAmp;
+  float yfTwoThird = scopeCenter - (baseAmp * (2.0f/3.0f));
+  float yfThird = scopeCenter - (baseAmp * (1.0f/3.0f));
 
         if (useSmoothing) {
           if (!isfinite(prevYf)) prevYf = yf;
@@ -113,26 +121,56 @@ class ScopeDisplayU8g2 {
           }
           prevYf = static_cast<float>(y);
         }
+
+        // Draw the 2/3-amplitude overlay
+        if (useSmoothing) {
+          if (!isfinite(prevYfTwoThird)) prevYfTwoThird = yfTwoThird;
+          float smoothYTwoThird = (smoothingAlpha * yfTwoThird) + ((1.0f - smoothingAlpha) * prevYfTwoThird);
+          int yPrevTwoThird = constrain(static_cast<int>(round(prevYfTwoThird)), 0, kScreenHeight - 1);
+          int yCurTwoThird  = constrain(static_cast<int>(round(smoothYTwoThird)), 0, kScreenHeight - 1);
+          if (x == 0) {
+            display->drawPixel(x, yCurTwoThird);
+          } else {
+            display->drawLine(x - 1, yPrevTwoThird, x, yCurTwoThird);
+          }
+          prevYfTwoThird = smoothYTwoThird;
+        } else {
+          int yTwoThird = constrain(static_cast<int>(round(yfTwoThird)), 0, kScreenHeight - 1);
+          if (!isfinite(prevYfTwoThird)) {
+            display->drawPixel(x, yTwoThird);
+          } else {
+            display->drawLine(x - 1, static_cast<int>(round(prevYfTwoThird)), x, yTwoThird);
+          }
+          prevYfTwoThird = static_cast<float>(yTwoThird);
+        }
+
+        // Draw the 1/3-amplitude overlay (a bit subtler)
+        if (useSmoothing) {
+          if (!isfinite(prevYfThird)) prevYfThird = yfThird;
+          float smoothYThird = (smoothingAlpha * yfThird) + ((1.0f - smoothingAlpha) * prevYfThird);
+          int yPrevThird = constrain(static_cast<int>(round(prevYfThird)), 0, kScreenHeight - 1);
+          int yCurThird  = constrain(static_cast<int>(round(smoothYThird)), 0, kScreenHeight - 1);
+          if (x == 0) {
+            display->drawPixel(x, yCurThird);
+          } else {
+            display->drawLine(x - 1, yPrevThird, x, yCurThird);
+          }
+          prevYfThird = smoothYThird;
+        } else {
+          int yThird = constrain(static_cast<int>(round(yfThird)), 0, kScreenHeight - 1);
+          if (!isfinite(prevYfThird)) {
+            display->drawPixel(x, yThird);
+          } else {
+            display->drawLine(x - 1, static_cast<int>(round(prevYfThird)), x, yThird);
+          }
+          prevYfThird = static_cast<float>(yThird);
+        }
       }
 
       lastDisplayY = prevYf;
     }
 
-    void renderStatus() {
-      display->setFont(u8g2_font_5x7_tf);
-      display->setCursor(0, 8);
-      if (isPlaying) {
-        display->print("> ");
-      } else {
-        display->print("|| ");
-      }
-      if (currentFile.length() > 0) {
-        display->print(currentFile.c_str());
-      } else {
-        display->print("-");
-      }
-    }
-
+  
   public:
     // Allow external control of horizontal zoom and vertical scale so UI
     // settings can affect the scope rendering.
@@ -184,17 +222,11 @@ class ScopeDisplayU8g2 {
       return true;
     }
 
-    void updateStatus(bool playing, const String& filename) {
-      if (xSemaphoreTake(displayMutex, portMAX_DELAY)) {
-        isPlaying = playing;
-        currentFile = filename;
-        xSemaphoreGive(displayMutex);
-      }
-    }
+
 
     SemaphoreHandle_t* getMutex() {
       return &displayMutex;
     }
 };
 
-#endif  /
+#endif  
