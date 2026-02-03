@@ -9,6 +9,81 @@
 #include "config.h"
 #include "SettingsScreen.h"
 
+// -----------------------------------------------------------------------------
+// Audio mixer / delay defaults exposed to UI and storage
+// -----------------------------------------------------------------------------
+constexpr float DEFAULT_DELAY_TIME_MS    = 420.0f;
+constexpr float DEFAULT_DELAY_DEPTH      = 0.40f;
+constexpr float DEFAULT_DELAY_FEEDBACK   = 0.45f;
+
+constexpr float DELAY_TIME_MIN_MS        = 50.0f;
+constexpr float DELAY_TIME_MAX_MS        = 2000.0f;
+constexpr float DELAY_TIME_STEP_MS       = 10.0f;
+
+constexpr float DELAY_DEPTH_MIN          = 0.0f;
+constexpr float DELAY_DEPTH_MAX          = 1.0f;
+constexpr float DELAY_DEPTH_STEP         = 0.02f;
+
+constexpr float DELAY_FEEDBACK_MIN       = 0.0f;
+constexpr float DELAY_FEEDBACK_MAX       = 0.95f;
+constexpr float DELAY_FEEDBACK_STEP      = 0.02f;
+
+constexpr float MIXER_DRY_MIN            = 0.0f;
+constexpr float MIXER_DRY_MAX            = 1.0f;
+constexpr float MIXER_DRY_STEP           = 0.02f;
+constexpr float MIXER_DEFAULT_DRY_LEVEL  = 1.0f;
+
+constexpr float MIXER_WET_MIN            = 0.0f;
+constexpr float MIXER_WET_MAX            = 1.0f;
+constexpr float MIXER_WET_STEP           = 0.02f;
+constexpr float MIXER_DEFAULT_WET_LEVEL  = 0.75f;
+
+// FILTER SETTINGS
+constexpr float LOW_PASS_CUTOFF_HZ = 500.0f;
+constexpr float LOW_PASS_Q         = 0.8071f;
+constexpr float LOW_PASS_MIN_HZ    = 300.0f;
+constexpr float LOW_PASS_MAX_HZ    = 4500.0f;
+constexpr float LOW_PASS_STEP_HZ   = 25.0f;
+constexpr float LOW_PASS_CUTOFF_SMOOTH_ALPHA = 0.48f; // 0..1
+constexpr float LOW_PASS_CUTOFF_DEADBAND_HZ  = 4.0f;
+constexpr float LOW_PASS_Q_MIN      = 0.2f;
+constexpr float LOW_PASS_Q_MAX      = 2.5f;
+constexpr float LOW_PASS_Q_STEP     = 0.05f;
+
+constexpr float FILTER_SLEW_MIN_HZ_PER_SEC      = 100.0f;
+constexpr float FILTER_SLEW_MAX_HZ_PER_SEC      = 20000.0f;
+constexpr float FILTER_SLEW_STEP_HZ_PER_SEC     = 100.0f;
+constexpr float FILTER_SLEW_DEFAULT_HZ_PER_SEC  = 8000.0f;
+
+// Master bus compression (gentle glue on final output)
+constexpr bool     MASTER_COMPRESSOR_ENABLED          = true;
+constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MS        = 12;
+constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MS       = 70;
+constexpr uint16_t MASTER_COMPRESSOR_HOLD_MS          = 12;
+constexpr uint8_t  MASTER_COMPRESSOR_THRESHOLD_PERCENT= 18;  // relative to full-scale
+constexpr float    MASTER_COMPRESSOR_RATIO            = 0.75f; // 0..1 (lower = stronger)
+
+constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MIN_MS    = 1;
+constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MAX_MS    = 100;
+constexpr uint16_t MASTER_COMPRESSOR_ATTACK_STEP_MS   = 1;
+
+constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MIN_MS   = 10;
+constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MAX_MS   = 500;
+constexpr uint16_t MASTER_COMPRESSOR_RELEASE_STEP_MS  = 5;
+
+constexpr uint16_t MASTER_COMPRESSOR_HOLD_MIN_MS      = 0;
+constexpr uint16_t MASTER_COMPRESSOR_HOLD_MAX_MS      = 100;
+constexpr uint16_t MASTER_COMPRESSOR_HOLD_STEP_MS     = 1;
+
+constexpr float    MASTER_COMPRESSOR_THRESHOLD_MIN    = 0.0f;
+constexpr float    MASTER_COMPRESSOR_THRESHOLD_MAX    = 100.0f;
+constexpr float    MASTER_COMPRESSOR_THRESHOLD_STEP   = 1.0f;
+
+constexpr float    MASTER_COMPRESSOR_RATIO_MIN        = 0.1f;
+constexpr float    MASTER_COMPRESSOR_RATIO_MAX        = 1.0f;
+constexpr float    MASTER_COMPRESSOR_RATIO_STEP       = 0.05f;
+
+
 class SettingsScreenU8g2 : public ISettingsScreen {
 public:
     using Button = ISettingsScreen::Button;
@@ -16,19 +91,10 @@ public:
 	enum Item : uint8_t {
 		ITEM_ZOOM = 0,
 		ITEM_DELAY_TIME,
-		ITEM_DELAY_DEPTH,
 		ITEM_DELAY_FEEDBACK,
 		ITEM_FILTER_CUTOFF,
 		ITEM_FILTER_Q,
-		ITEM_FILTER_SLEW,
-		ITEM_DRY_MIX,
-		ITEM_WET_MIX,
 		ITEM_COMP_ENABLED,
-		ITEM_COMP_ATTACK,
-		ITEM_COMP_RELEASE,
-		ITEM_COMP_HOLD,
-		ITEM_COMP_THRESHOLD,
-		ITEM_COMP_RATIO,
 		ITEM_COUNT
 	};
 
@@ -38,18 +104,8 @@ public:
 	void setZoomCallback(std::function<void(float)> cb) override { zoomCallback = cb; }
 	void setFilterCutoffCallback(std::function<void(float)> cb) override { filterCutoffCallback = cb; }
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
-	void setFilterSlewCallback(std::function<void(float)> cb) override { filterSlewCallback = cb; }
 	void setDelayTimeCallback(std::function<void(float)> cb) override { delayTimeCallback = cb; }
-	void setDelayDepthCallback(std::function<void(float)> cb) override { delayDepthCallback = cb; }
 	void setDelayFeedbackCallback(std::function<void(float)> cb) override { delayFeedbackCallback = cb; }
-	void setDryMixCallback(std::function<void(float)> cb) override { dryMixCallback = cb; }
-	void setWetMixCallback(std::function<void(float)> cb) override { wetMixCallback = cb; }
-	void setCompressorAttackCallback(std::function<void(float)> cb) override { compAttackCallback = cb; }
-	void setCompressorReleaseCallback(std::function<void(float)> cb) override { compReleaseCallback = cb; }
-	void setCompressorHoldCallback(std::function<void(float)> cb) override { compHoldCallback = cb; }
-	void setCompressorThresholdCallback(std::function<void(float)> cb) override { compThresholdCallback = cb; }
-	void setCompressorRatioCallback(std::function<void(float)> cb) override { compRatioCallback = cb; }
-	void setCompressorEnabledCallback(std::function<void(bool)> cb) override { compEnabledCallback = cb; }
 
 	void begin() override {}
 
@@ -110,37 +166,17 @@ public:
 	}
 
 	float getZoom() const override { return zoom; }
-	void setZoom(float z) override { zoom = clampValue(z, ZOOM_MIN, ZOOM_MAX); markDirty(); notifyZoomChanged(); }
-
 	float getDelayTimeMs() const override { return delayTimeMs; }
-	float getDelayDepth() const override { return delayDepth; }
 	float getDelayFeedback() const override { return delayFeedback; }
 	float getFilterCutoffHz() const override { return filterCutoffHz; }
 	float getFilterQ() const override { return filterQ; }
-	float getFilterSlewHzPerSec() const override { return filterSlewHzPerSec; }
-	float getDryMix() const override { return dryMix; }
-	float getWetMix() const override { return wetMix; }
 	bool getCompressorEnabled() const override { return compEnabled; }
-	float getCompressorAttackMs() const override { return compAttackMs; }
-	float getCompressorReleaseMs() const override { return compReleaseMs; }
-	float getCompressorHoldMs() const override { return compHoldMs; }
-	float getCompressorThresholdPercent() const override { return compThresholdPercent; }
-	float getCompressorRatio() const override { return compRatio; }
-
+	void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
 	void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
-	void setDelayDepth(float d) override { delayDepth = clampValue(d, DELAY_DEPTH_MIN, DELAY_DEPTH_MAX); markDirty(); notifyDelayDepthChanged(); }
 	void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
 	void setFilterCutoffHz(float hz) override { filterCutoffHz = clampValue(hz, LOW_PASS_MIN_HZ, LOW_PASS_MAX_HZ); markDirty(); notifyFilterCutoffChanged(); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
-	void setFilterSlewHzPerSec(float hz) override { filterSlewHzPerSec = clampValue(hz, FILTER_SLEW_MIN_HZ_PER_SEC, FILTER_SLEW_MAX_HZ_PER_SEC); markDirty(); notifyFilterSlewChanged(); }
-	void setDryMix(float mix) override { dryMix = clampValue(mix, MIXER_DRY_MIN, MIXER_DRY_MAX); markDirty(); notifyDryMixChanged(); }
-	void setWetMix(float mix) override { wetMix = clampValue(mix, MIXER_WET_MIN, MIXER_WET_MAX); markDirty(); notifyWetMixChanged(); }
 	void setCompressorEnabled(bool enabled) override { compEnabled = enabled; markDirty(); notifyCompressorEnabledChanged(); }
-	void setCompressorAttackMs(float ms) override { compAttackMs = clampValue(ms, MASTER_COMPRESSOR_ATTACK_MIN_MS, MASTER_COMPRESSOR_ATTACK_MAX_MS); markDirty(); notifyCompressorAttackChanged(); }
-	void setCompressorReleaseMs(float ms) override { compReleaseMs = clampValue(ms, MASTER_COMPRESSOR_RELEASE_MIN_MS, MASTER_COMPRESSOR_RELEASE_MAX_MS); markDirty(); notifyCompressorReleaseChanged(); }
-	void setCompressorHoldMs(float ms) override { compHoldMs = clampValue(ms, MASTER_COMPRESSOR_HOLD_MIN_MS, MASTER_COMPRESSOR_HOLD_MAX_MS); markDirty(); notifyCompressorHoldChanged(); }
-	void setCompressorThresholdPercent(float pct) override { compThresholdPercent = clampValue(pct, MASTER_COMPRESSOR_THRESHOLD_MIN, MASTER_COMPRESSOR_THRESHOLD_MAX); markDirty(); notifyCompressorThresholdChanged(); }
-	void setCompressorRatio(float ratio) override { compRatio = clampValue(ratio, MASTER_COMPRESSOR_RATIO_MIN, MASTER_COMPRESSOR_RATIO_MAX); markDirty(); notifyCompressorRatioChanged(); }
 private:
 	U8G2 &u8g2;
 	bool active = false;
@@ -174,11 +210,6 @@ private:
 	std::function<void(float)> delayFeedbackCallback;
 	std::function<void(float)> dryMixCallback;
 	std::function<void(float)> wetMixCallback;
-	std::function<void(float)> compAttackCallback;
-	std::function<void(float)> compReleaseCallback;
-	std::function<void(float)> compHoldCallback;
-	std::function<void(float)> compThresholdCallback;
-	std::function<void(float)> compRatioCallback;
 	std::function<void(bool)> compEnabledCallback;
 
 	void markDirty() { dirty = true; }
@@ -193,23 +224,14 @@ private:
 	void notifyDryMixChanged() { if (dryMixCallback) dryMixCallback(dryMix); }
 	void notifyWetMixChanged() { if (wetMixCallback) wetMixCallback(wetMix); }
 	void notifyCompressorEnabledChanged() { if (compEnabledCallback) compEnabledCallback(compEnabled); }
-	void notifyCompressorAttackChanged() { if (compAttackCallback) compAttackCallback(compAttackMs); }
-	void notifyCompressorReleaseChanged() { if (compReleaseCallback) compReleaseCallback(compReleaseMs); }
-	void notifyCompressorHoldChanged() { if (compHoldCallback) compHoldCallback(compHoldMs); }
-	void notifyCompressorThresholdChanged() { if (compThresholdCallback) compThresholdCallback(compThresholdPercent); }
-	void notifyCompressorRatioChanged() { if (compRatioCallback) compRatioCallback(compRatio); }
-
 	void adjustCurrentItem(int delta) {
 		auto coarseMult = [](float fine) { return fine * 5.0f; };
 		switch (selection) {
 			case ITEM_ZOOM:
-				applyAdjustment(zoom, delta, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, ZOOM_BIG_STEP, [this]{ notifyZoomChanged(); });
+				applyAdjustment(zoom, delta, 0.2f, 12.0f, 0.1f, 0.5f, [this]{ notifyZoomChanged(); });
 				break;
 			case ITEM_DELAY_TIME:
 				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, DELAY_TIME_STEP_MS * 10.0f, [this]{ notifyDelayTimeChanged(); });
-				break;
-			case ITEM_DELAY_DEPTH:
-				applyAdjustment(delayDepth, delta, DELAY_DEPTH_MIN, DELAY_DEPTH_MAX, DELAY_DEPTH_STEP, coarseMult(DELAY_DEPTH_STEP), [this]{ notifyDelayDepthChanged(); });
 				break;
 			case ITEM_DELAY_FEEDBACK:
 				applyAdjustment(delayFeedback, delta, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX, DELAY_FEEDBACK_STEP, coarseMult(DELAY_FEEDBACK_STEP), [this]{ notifyDelayFeedbackChanged(); });
@@ -220,15 +242,6 @@ private:
 			case ITEM_FILTER_Q:
 				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, coarseMult(LOW_PASS_Q_STEP), [this]{ notifyFilterQChanged(); });
 				break;
-			case ITEM_FILTER_SLEW:
-				applyAdjustment(filterSlewHzPerSec, delta, FILTER_SLEW_MIN_HZ_PER_SEC, FILTER_SLEW_MAX_HZ_PER_SEC, FILTER_SLEW_STEP_HZ_PER_SEC, FILTER_SLEW_STEP_HZ_PER_SEC * 10.0f, [this]{ notifyFilterSlewChanged(); });
-				break;
-			case ITEM_DRY_MIX:
-				applyAdjustment(dryMix, delta, MIXER_DRY_MIN, MIXER_DRY_MAX, MIXER_DRY_STEP, coarseMult(MIXER_DRY_STEP), [this]{ notifyDryMixChanged(); });
-				break;
-			case ITEM_WET_MIX:
-				applyAdjustment(wetMix, delta, MIXER_WET_MIN, MIXER_WET_MAX, MIXER_WET_STEP, coarseMult(MIXER_WET_STEP), [this]{ notifyWetMixChanged(); });
-				break;
 			case ITEM_COMP_ENABLED:
 				if (delta != 0) {
 					compEnabled = !compEnabled;
@@ -236,22 +249,6 @@ private:
 					notifyCompressorEnabledChanged();
 				}
 				break;
-			case ITEM_COMP_ATTACK:
-				applyAdjustment(compAttackMs, delta, MASTER_COMPRESSOR_ATTACK_MIN_MS, MASTER_COMPRESSOR_ATTACK_MAX_MS, MASTER_COMPRESSOR_ATTACK_STEP_MS, coarseMult(MASTER_COMPRESSOR_ATTACK_STEP_MS), [this]{ notifyCompressorAttackChanged(); });
-				break;
-			case ITEM_COMP_RELEASE:
-				applyAdjustment(compReleaseMs, delta, MASTER_COMPRESSOR_RELEASE_MIN_MS, MASTER_COMPRESSOR_RELEASE_MAX_MS, MASTER_COMPRESSOR_RELEASE_STEP_MS, coarseMult(MASTER_COMPRESSOR_RELEASE_STEP_MS), [this]{ notifyCompressorReleaseChanged(); });
-				break;
-			case ITEM_COMP_HOLD:
-				applyAdjustment(compHoldMs, delta, MASTER_COMPRESSOR_HOLD_MIN_MS, MASTER_COMPRESSOR_HOLD_MAX_MS, MASTER_COMPRESSOR_HOLD_STEP_MS, coarseMult(MASTER_COMPRESSOR_HOLD_STEP_MS), [this]{ notifyCompressorHoldChanged(); });
-				break;
-			case ITEM_COMP_THRESHOLD:
-				applyAdjustment(compThresholdPercent, delta, MASTER_COMPRESSOR_THRESHOLD_MIN, MASTER_COMPRESSOR_THRESHOLD_MAX, MASTER_COMPRESSOR_THRESHOLD_STEP, coarseMult(MASTER_COMPRESSOR_THRESHOLD_STEP), [this]{ notifyCompressorThresholdChanged(); });
-				break;
-			case ITEM_COMP_RATIO:
-				applyAdjustment(compRatio, delta, MASTER_COMPRESSOR_RATIO_MIN, MASTER_COMPRESSOR_RATIO_MAX, MASTER_COMPRESSOR_RATIO_STEP, coarseMult(MASTER_COMPRESSOR_RATIO_STEP), [this]{ notifyCompressorRatioChanged(); });
-				break;
-			
 		}
 	}
 
@@ -270,14 +267,13 @@ private:
 	void drawMenu() {
 		u8g2.setFont(u8g2_font_6x12_tr);
 		static const char* const labels[ITEM_COUNT] = {
-			"Zoom","Delay ms","Delay depth","Delay fb","Filter Hz",
-			"Filter Q","Filter slew","Dry mix","Wet mix","Comp on",
-			"Comp atk","Comp rel","Comp hold","Comp thr","Comp ratio"
+			"Zoom","Delay ms","Delay fb","Filter Hz",
+			"Filter Q","Comp on"
 		};
 		const int rowHeight = 10;
 		const int highlightHeight = rowHeight + 2;
 		const int menuTop = 12;
-		uint8_t visible = SETTINGS_VISIBLE_MENU_ITEMS;
+		uint8_t visible = 5; // number of visible items
 		uint8_t firstIndex = 0;
 		if (ITEM_COUNT > visible) {
 			if (selection >= visible) {
@@ -307,23 +303,10 @@ private:
 			switch (idx) {
 				case ITEM_ZOOM: snprintf(valbuf, sizeof(valbuf), "%.1fx", zoom); break;
 				case ITEM_DELAY_TIME: snprintf(valbuf, sizeof(valbuf), "%.0fms", delayTimeMs); break;
-				case ITEM_DELAY_DEPTH: snprintf(valbuf, sizeof(valbuf), "%.2f", delayDepth); break;
 				case ITEM_DELAY_FEEDBACK: snprintf(valbuf, sizeof(valbuf), "%.2f", delayFeedback); break;
 				case ITEM_FILTER_CUTOFF: snprintf(valbuf, sizeof(valbuf), "%.0fHz", filterCutoffHz); break;
 				case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
-				case ITEM_FILTER_SLEW: snprintf(valbuf, sizeof(valbuf), "%.1fk/s", filterSlewHzPerSec / 1000.0f); break;
-				case ITEM_DRY_MIX: snprintf(valbuf, sizeof(valbuf), "%.2f", dryMix); break;
-				case ITEM_WET_MIX: snprintf(valbuf, sizeof(valbuf), "%.2f", wetMix); break;
 				case ITEM_COMP_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", compEnabled ? "On" : "Off"); break;
-				case ITEM_COMP_ATTACK: snprintf(valbuf, sizeof(valbuf), "%.0fms", compAttackMs); break;
-				case ITEM_COMP_RELEASE: snprintf(valbuf, sizeof(valbuf), "%.0fms", compReleaseMs); break;
-				case ITEM_COMP_HOLD: snprintf(valbuf, sizeof(valbuf), "%.0fms", compHoldMs); break;
-				case ITEM_COMP_THRESHOLD: snprintf(valbuf, sizeof(valbuf), "%.0f%%", compThresholdPercent); break;
-				case ITEM_COMP_RATIO: {
-					float displayRatio = (compRatio > 0.001f) ? (1.0f / compRatio) : 0.0f;
-					snprintf(valbuf, sizeof(valbuf), "1:%.1f", displayRatio);
-					break;
-				}
 			}
 			int vx = u8g2.getDisplayWidth() - (int)strlen(valbuf) * 6 - 4;
 			u8g2.drawStr(vx, baseline, valbuf);
