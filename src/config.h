@@ -5,7 +5,7 @@
 #include <cstdint>
 
 
-#define DEBUGMODE 0
+#define DEBUGMODE 1
 
 // -----------------------------------------------------------------------------
 // Display selection & geometry
@@ -38,11 +38,10 @@ constexpr bool DISPLAY_INVERT_COLORS = false;
 
 
 // zoom screen defaults
-constexpr float DEFAULT_HORIZ_ZOOM = 1.0f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
-constexpr float DEFAULT_VERT_SCALE = 2.0f; // amplitude schaal factor
+constexpr float DEFAULT_HORIZ_ZOOM = 2.0f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
+constexpr float DEFAULT_VERT_SCALE = 3.0f; // amplitude schaal factor
 
 // samplepaths:
-
 constexpr const char* SAMPLE_PATHS[] = {
     "/1.wav",
     "/2.wav",
@@ -53,6 +52,13 @@ constexpr const char* SAMPLE_PATHS[] = {
 };
 constexpr int NUM_SAMPLES = sizeof(SAMPLE_PATHS) / sizeof(SAMPLE_PATHS[0]);
 
+constexpr std::array<uint8_t, 6> BUTTON_CHANNELS = { 3, 2,4, 5, 6, 7};
+
+constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND = 1;
+constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 0;
+constexpr size_t BUTTON_COUNT = BUTTON_CHANNELS.size();
+constexpr bool BUTTONS_ACTIVE_LOW = true;
+
 // pinnen waar de knopjes aan zitten (moeten interne pullups hebben)
 constexpr int Button1 = 25;
 constexpr int Button2 = 26;
@@ -60,13 +66,17 @@ constexpr int Button3 = 33;
 
 constexpr int BUTTON_PINS[] = {Button1, Button2, Button3};
 
- constexpr uint32_t BUTTON_FADE_MS = 12;
-constexpr uint32_t BUTTON_DEBOUNCE_MS = 10;
+constexpr uint32_t BUTTON_FADE_MS = 18;
+constexpr uint32_t BUTTON_DEBOUNCE_MS = 8;
 constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 20;
+// -----------------------------------------------------------------------------
+  const int COPIED_ZERO_THRESHOLD = 3; // number of consecutive loops with copied==0
+  static const size_t kScopeSilenceFramesPerLoop = 128; // number of silence frames to feed per loop when no audio
 
 
 constexpr int POT_PIN = 34;
 constexpr bool POT_POLARITY_INVERTED = true;
+constexpr uint32_t VOL_READ_INTERVAL_MS = 50; // read volume pot every 50ms
 
 constexpr int SD_CS_PIN    = 5;  // CS
 constexpr int SPI_MOSI_PIN = 23; // MOSI 
@@ -77,3 +87,45 @@ constexpr int I2S_PIN_BCK  = 14; // Bit Clock
 constexpr int I2S_PIN_WS   = 15; // Word Select (LRCLK)
 constexpr int I2S_PIN_DATA = 32; // DIN
 
+
+// SN74HC151 select pins (A = LSB) and shared output
+constexpr int INPUT_MUX_PIN_A = 13;
+constexpr int INPUT_MUX_PIN_B = 4;
+constexpr int INPUT_MUX_PIN_C = 16;
+constexpr int INPUT_MUX_PIN_Y = 17;
+constexpr int INPUT_MUX_PIN_EN = -1; // tie to GND on PCB if < 0
+constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 5;
+
+// -----------------------------------------------------------------------------
+// Audio mixer / delay defaults exposed to UI and storage
+// -----------------------------------------------------------------------------
+constexpr float DEFAULT_DELAY_TIME_MS    = 420.0f;
+constexpr float DEFAULT_DELAY_DEPTH      = 0.40f;
+constexpr float DEFAULT_DELAY_FEEDBACK   = 0.45f;
+
+constexpr float DELAY_TIME_MIN_MS        = 50.0f;
+constexpr float DELAY_TIME_MAX_MS        = 1200.0f;
+constexpr float DELAY_TIME_STEP_MS       = 10.0f;
+
+constexpr float DELAY_FEEDBACK_MIN       = 0.0f;
+constexpr float DELAY_FEEDBACK_MAX       = 0.95f;
+constexpr float DELAY_FEEDBACK_STEP      = 0.02f;
+
+// FILTER SETTINGS
+constexpr float LOW_PASS_CUTOFF_HZ = 500.0f;
+constexpr float LOW_PASS_Q         = 0.8071f;
+constexpr float LOW_PASS_MIN_HZ    = 300.0f;
+constexpr float LOW_PASS_MAX_HZ    = 4500.0f;
+constexpr float LOW_PASS_STEP_HZ   = 25.0f;
+
+constexpr float LOW_PASS_Q_MIN      = 0.2f;
+constexpr float LOW_PASS_Q_MAX      = 2.5f;
+constexpr float LOW_PASS_Q_STEP     = 0.05f;
+
+// Master bus compression (gentle glue on final output)
+constexpr bool     MASTER_COMPRESSOR_ENABLED          = true;
+constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MS        = 12;
+constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MS       = 70;
+constexpr uint16_t MASTER_COMPRESSOR_HOLD_MS          = 12;
+constexpr uint8_t  MASTER_COMPRESSOR_THRESHOLD_PERCENT= 18;  // relative to full-scale
+constexpr float    MASTER_COMPRESSOR_RATIO            = 0.75f; // 0..1 (lower = stronger)
