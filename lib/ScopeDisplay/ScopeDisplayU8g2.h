@@ -8,6 +8,9 @@
 
 #include "config.h"
 
+      const bool useSmoothing = false;
+      const float smoothingAlpha = 0.1f;
+
 class ScopeDisplayU8g2 {
   private:
     U8G2* display;
@@ -22,6 +25,11 @@ class ScopeDisplayU8g2 {
     float horizZoom = DEFAULT_HORIZ_ZOOM;
     float vertScale = DEFAULT_VERT_SCALE;
     float lastDisplayY = NAN;
+
+  // Delay/echo visualization parameters (updated from UI/audio)
+  float delayMs = 0.0f;        // delay duration in milliseconds
+  float delayFeedback = 0.0f;  // 0..1 feedback amount used to determine number of echoes
+  int32_t delaySampleRate = 44100; // sample rate used to convert ms->samples
 
     String currentFile;
     bool isPlaying;
@@ -55,8 +63,7 @@ class ScopeDisplayU8g2 {
       const int scopeCenter = kScreenHeight / 2;
       if (waveformSamples <= 0 || !waveformBuffer) return;
 
-      const bool useSmoothing = true;
-      const float smoothingAlpha = 0.6f;
+
 
       int displayedSamples = std::max(1, static_cast<int>(waveformSamples / horizZoom));
       displayedSamples = std::min(displayedSamples, waveformSamples);
@@ -75,8 +82,15 @@ class ScopeDisplayU8g2 {
   float prevYf = isfinite(lastDisplayY) ? lastDisplayY : NAN;
   // Separate previous Y values for the additional overlays so each can be
   // smoothed independently without affecting the main waveform.
-  float prevYfTwoThird = NAN;
-  float prevYfThird = NAN;
+      float prevYfTwoThird = NAN;
+      float prevYfThird = NAN;
+      static constexpr int MAX_ECHO_COPIES = 5;
+      float prevYfEcho[MAX_ECHO_COPIES];
+      int prevXEcho[MAX_ECHO_COPIES];
+      for (int i = 0; i < MAX_ECHO_COPIES; ++i) {
+        prevYfEcho[i] = NAN;
+        prevXEcho[i] = -1;
+      }
 
       for (int x = 0; x < kScreenWidth; ++x) {
         float samplePos = startIndex + x * step;
@@ -120,6 +134,45 @@ class ScopeDisplayU8g2 {
             display->drawLine(x - 1, static_cast<int>(round(prevYf)), x, y);
           }
           prevYf = static_cast<float>(y);
+        }
+
+        // Draw visual echoes (shifted copies) based on delayMs & delayFeedback.
+        // We compute a pixel offset from delay (ms) -> samples -> pixels, then draw
+        // a small pixel for each echo copy to keep it subtle.
+        if (delayMs > 0.5f && delayFeedback > 0.01f && displayedSamples > 0 && delaySampleRate > 0) {
+          int nCopies = static_cast<int>(std::ceil(delayFeedback * static_cast<float>(MAX_ECHO_COPIES)));
+          nCopies = std::min(std::max(nCopies, 1), MAX_ECHO_COPIES);
+          float delaySamples = (delayMs / 1000.0f) * static_cast<float>(delaySampleRate);
+          float pxPerSample = static_cast<float>(kScreenWidth) / static_cast<float>(displayedSamples);
+          float offsetPx = delaySamples * pxPerSample;
+          if (offsetPx < 1.0f) offsetPx = 1.0f;
+
+          for (int c = 1; c <= nCopies; ++c) {
+            float txf = static_cast<float>(x) + static_cast<float>(c) * offsetPx;
+            int tx = static_cast<int>(roundf(txf));
+            if (tx < 0 || tx >= kScreenWidth) continue;
+
+            float decay = 1.0f - (static_cast<float>(c) / static_cast<float>(nCopies + 1));
+            float echoY = scopeCenter - (baseAmp * decay);
+            float smoothEchoY = echoY;
+            if (useSmoothing) {
+              if (!isfinite(prevYfEcho[c - 1])) prevYfEcho[c - 1] = echoY;
+              smoothEchoY = (smoothingAlpha * echoY) + ((1.0f - smoothingAlpha) * prevYfEcho[c - 1]);
+            }
+            int yEcho = constrain(static_cast<int>(round(smoothEchoY)), 0, kScreenHeight - 1);
+            if (prevXEcho[c - 1] >= 0) {
+              int yPrev = constrain(static_cast<int>(round(prevYfEcho[c - 1])), 0, kScreenHeight - 1);
+              display->drawLine(prevXEcho[c - 1], yPrev, tx, yEcho);
+            } else {
+              display->drawPixel(tx, yEcho);
+            }
+            const int echoHalfHeight = 5;
+            int echoTop = constrain(yEcho - echoHalfHeight, 0, kScreenHeight - 1);
+            int echoBottom = constrain(yEcho + echoHalfHeight - 1, 0, kScreenHeight - 1);
+            display->drawLine(tx, echoTop, tx, echoBottom);
+            prevXEcho[c - 1] = tx;
+            prevYfEcho[c - 1] = smoothEchoY;
+          }
         }
 
         // Draw the 2/3-amplitude overlay
@@ -176,6 +229,12 @@ class ScopeDisplayU8g2 {
     // settings can affect the scope rendering.
     void setHorizZoom(float hz) { horizZoom = hz; }
     void setVertScale(float vs) { vertScale = vs; }
+    // Set delay parameters used for echo visualization (delay in ms, feedback 0..1)
+    void setDelayParams(float ms, float feedback) {
+      delayMs = ms;
+      delayFeedback = feedback;
+    }
+    void setDelaySampleRate(int32_t sr) { delaySampleRate = sr > 0 ? sr : 44100; }
     void setSuspended(bool value) {
       suspended = value;
       if (!value) {

@@ -1,5 +1,4 @@
-#ifndef SCOPEI2SSTREAM_H
-#define SCOPEI2SSTREAM_H
+#pragma once
 
 #include <AudioTools.h>
 #include <algorithm>
@@ -29,7 +28,7 @@ class ScopeI2SStream : public I2SStream {
      * @param displayMutex Pointer naar mutex voor thread-safe access
      * @param downsample Neem 1 van elke N samples (default: 16)
      */
-    ScopeI2SStream(int16_t* buffer, int* index, SemaphoreHandle_t* displayMutex, int downsample = 16) 
+    ScopeI2SStream(int16_t* buffer, int* index, SemaphoreHandle_t* displayMutex, int downsample = 4) 
       : waveformBuffer(buffer), 
         waveformIndex(index), 
         mutex(displayMutex),
@@ -119,4 +118,3 @@ class ScopeI2SStream : public I2SStream {
     }
 };
 
-#endif // SCOPEI2SSTREAM_H

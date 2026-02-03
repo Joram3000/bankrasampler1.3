@@ -9,79 +9,6 @@
 #include "config.h"
 #include "SettingsScreen.h"
 
-// -----------------------------------------------------------------------------
-// Audio mixer / delay defaults exposed to UI and storage
-// -----------------------------------------------------------------------------
-constexpr float DEFAULT_DELAY_TIME_MS    = 420.0f;
-constexpr float DEFAULT_DELAY_DEPTH      = 0.40f;
-constexpr float DEFAULT_DELAY_FEEDBACK   = 0.45f;
-
-constexpr float DELAY_TIME_MIN_MS        = 50.0f;
-constexpr float DELAY_TIME_MAX_MS        = 2000.0f;
-constexpr float DELAY_TIME_STEP_MS       = 10.0f;
-
-constexpr float DELAY_DEPTH_MIN          = 0.0f;
-constexpr float DELAY_DEPTH_MAX          = 1.0f;
-constexpr float DELAY_DEPTH_STEP         = 0.02f;
-
-constexpr float DELAY_FEEDBACK_MIN       = 0.0f;
-constexpr float DELAY_FEEDBACK_MAX       = 0.95f;
-constexpr float DELAY_FEEDBACK_STEP      = 0.02f;
-
-constexpr float MIXER_DRY_MIN            = 0.0f;
-constexpr float MIXER_DRY_MAX            = 1.0f;
-constexpr float MIXER_DRY_STEP           = 0.02f;
-constexpr float MIXER_DEFAULT_DRY_LEVEL  = 1.0f;
-
-constexpr float MIXER_WET_MIN            = 0.0f;
-constexpr float MIXER_WET_MAX            = 1.0f;
-constexpr float MIXER_WET_STEP           = 0.02f;
-constexpr float MIXER_DEFAULT_WET_LEVEL  = 0.75f;
-
-// FILTER SETTINGS
-constexpr float LOW_PASS_CUTOFF_HZ = 500.0f;
-constexpr float LOW_PASS_Q         = 0.8071f;
-constexpr float LOW_PASS_MIN_HZ    = 300.0f;
-constexpr float LOW_PASS_MAX_HZ    = 4500.0f;
-constexpr float LOW_PASS_STEP_HZ   = 25.0f;
-constexpr float LOW_PASS_CUTOFF_SMOOTH_ALPHA = 0.48f; // 0..1
-constexpr float LOW_PASS_CUTOFF_DEADBAND_HZ  = 4.0f;
-constexpr float LOW_PASS_Q_MIN      = 0.2f;
-constexpr float LOW_PASS_Q_MAX      = 2.5f;
-constexpr float LOW_PASS_Q_STEP     = 0.05f;
-
-constexpr float FILTER_SLEW_MIN_HZ_PER_SEC      = 100.0f;
-constexpr float FILTER_SLEW_MAX_HZ_PER_SEC      = 20000.0f;
-constexpr float FILTER_SLEW_STEP_HZ_PER_SEC     = 100.0f;
-constexpr float FILTER_SLEW_DEFAULT_HZ_PER_SEC  = 8000.0f;
-
-// Master bus compression (gentle glue on final output)
-constexpr bool     MASTER_COMPRESSOR_ENABLED          = true;
-constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MS        = 12;
-constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MS       = 70;
-constexpr uint16_t MASTER_COMPRESSOR_HOLD_MS          = 12;
-constexpr uint8_t  MASTER_COMPRESSOR_THRESHOLD_PERCENT= 18;  // relative to full-scale
-constexpr float    MASTER_COMPRESSOR_RATIO            = 0.75f; // 0..1 (lower = stronger)
-
-constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MIN_MS    = 1;
-constexpr uint16_t MASTER_COMPRESSOR_ATTACK_MAX_MS    = 100;
-constexpr uint16_t MASTER_COMPRESSOR_ATTACK_STEP_MS   = 1;
-
-constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MIN_MS   = 10;
-constexpr uint16_t MASTER_COMPRESSOR_RELEASE_MAX_MS   = 500;
-constexpr uint16_t MASTER_COMPRESSOR_RELEASE_STEP_MS  = 5;
-
-constexpr uint16_t MASTER_COMPRESSOR_HOLD_MIN_MS      = 0;
-constexpr uint16_t MASTER_COMPRESSOR_HOLD_MAX_MS      = 100;
-constexpr uint16_t MASTER_COMPRESSOR_HOLD_STEP_MS     = 1;
-
-constexpr float    MASTER_COMPRESSOR_THRESHOLD_MIN    = 0.0f;
-constexpr float    MASTER_COMPRESSOR_THRESHOLD_MAX    = 100.0f;
-constexpr float    MASTER_COMPRESSOR_THRESHOLD_STEP   = 1.0f;
-
-constexpr float    MASTER_COMPRESSOR_RATIO_MIN        = 0.1f;
-constexpr float    MASTER_COMPRESSOR_RATIO_MAX        = 1.0f;
-constexpr float    MASTER_COMPRESSOR_RATIO_STEP       = 0.05f;
 
 
 class SettingsScreenU8g2 : public ISettingsScreen {
@@ -106,6 +33,7 @@ public:
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
 	void setDelayTimeCallback(std::function<void(float)> cb) override { delayTimeCallback = cb; }
 	void setDelayFeedbackCallback(std::function<void(float)> cb) override { delayFeedbackCallback = cb; }
+	void setCompressorEnabledCallback(std::function<void(bool)> cb) override { compEnabledCallback = cb; }
 
 	void begin() override {}
 
@@ -191,15 +119,7 @@ private:
 	float delayFeedback = DEFAULT_DELAY_FEEDBACK;
 	float filterCutoffHz = LOW_PASS_CUTOFF_HZ;
 	float filterQ = LOW_PASS_Q;
-	float filterSlewHzPerSec = FILTER_SLEW_DEFAULT_HZ_PER_SEC;
-	float dryMix = MIXER_DEFAULT_DRY_LEVEL;
-	float wetMix = MIXER_DEFAULT_WET_LEVEL;
 	bool compEnabled = MASTER_COMPRESSOR_ENABLED;
-	float compAttackMs = MASTER_COMPRESSOR_ATTACK_MS;
-	float compReleaseMs = MASTER_COMPRESSOR_RELEASE_MS;
-	float compHoldMs = MASTER_COMPRESSOR_HOLD_MS;
-	float compThresholdPercent = MASTER_COMPRESSOR_THRESHOLD_PERCENT;
-	float compRatio = MASTER_COMPRESSOR_RATIO;
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(float)> filterCutoffCallback;
@@ -220,9 +140,6 @@ private:
 	void notifyDelayFeedbackChanged() { if (delayFeedbackCallback) delayFeedbackCallback(delayFeedback); }
 	void notifyFilterCutoffChanged() { if (filterCutoffCallback) filterCutoffCallback(filterCutoffHz); }
 	void notifyFilterQChanged() { if (filterQCallback) filterQCallback(filterQ); }
-	void notifyFilterSlewChanged() { if (filterSlewCallback) filterSlewCallback(filterSlewHzPerSec); }
-	void notifyDryMixChanged() { if (dryMixCallback) dryMixCallback(dryMix); }
-	void notifyWetMixChanged() { if (wetMixCallback) wetMixCallback(wetMix); }
 	void notifyCompressorEnabledChanged() { if (compEnabledCallback) compEnabledCallback(compEnabled); }
 	void adjustCurrentItem(int delta) {
 		auto coarseMult = [](float fine) { return fine * 5.0f; };
