@@ -81,3 +81,11 @@ void setScopeHorizZoom(float z) {
 void setScopeDisplaySuspended(bool suspended) {
   scopeDisplay.setSuspended(suspended);
 }
+
+void setScopeDelayParams(float delayMs, float feedback) {
+  scopeDisplay.setDelayParams(delayMs, feedback);
+}
+
+void setScopeDelaySampleRate(int32_t sampleRate) {
+  scopeDisplay.setDelaySampleRate(sampleRate);
+}
