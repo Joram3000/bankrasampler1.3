@@ -56,6 +56,7 @@ static InitializationScreenU8g2* initializationScreen = nullptr;
 enum class OperatingMode { Performance, Settings, Initializing };
 OperatingMode currentMode = OperatingMode::Initializing;
 
+
 // Settings mode switch state
 bool settingsModeRawState = false;
 bool settingsModeDebouncedState = false;
@@ -72,7 +73,6 @@ Button buttons[BUTTON_COUNT] = {
 };
 
 static bool prevLatched[BUTTON_COUNT] = { false, false, false, false, false, false };
-
 
 void playSample(int index);
 void stopSample(int index);
@@ -197,7 +197,7 @@ void initDisplay() {
     Serial.println("Display initialized.");
   }
 
-  if (currentMode == OperatingMode::Initializing) {
+
     // Show a short initialization screen animation (1s) instead of a blind delay.
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
     if (auto* display = getU8g2Display()) {
@@ -207,14 +207,7 @@ void initDisplay() {
       }
       // ensure the screen shows for the configured duration
       initializationScreen->enter();
-      unsigned long start = millis();
-      unsigned long showMs = initializationScreen->getDurationMs();
-      
-      while (millis() - start < showMs) {
-        initializationScreen->update();
-        delay(200);
-      }
-      initializationScreen->exit();
+      initializationScreen->update();
     }
 #else
     delay(1000);
@@ -222,7 +215,7 @@ void initDisplay() {
   Serial.print("Init done, switching to Performance mode");
     currentMode = OperatingMode::Performance;
   }
-}
+
 
 static void initSettingsScreen() {
   if (settingsScreen) return;
@@ -337,10 +330,10 @@ void setup() {
   initAudio();
   initPlayer();  
   initDisplay();
-  setMuxChangeCallback(onMuxChange); // moet dit hier?
+  setMuxChangeCallback(onMuxChange); 
   initMuxScanner(5000, true);
   initSettingsScreen();
-  loadSettingsFromSd(settingsScreen); // werkt dit al?
+  loadSettingsFromSd(settingsScreen); 
   initSettingsModeSwitch();
 
   if (auto mutexPtr = static_cast<SemaphoreHandle_t*>(getDisplayMutex())) {
@@ -353,6 +346,7 @@ void setup() {
 void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
+  
   if (copied == 0) {
       // Als er geen nieuwe data binnenkomt, toch de delay-tail blijven
       // uitsturen zodat de reverb hoorbaar blijft.
