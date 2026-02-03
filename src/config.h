@@ -5,6 +5,8 @@
 #include <cstdint>
 
 
+#define DEBUGMODE 0
+
 // -----------------------------------------------------------------------------
 // Display selection & geometry
 // -----------------------------------------------------------------------------
@@ -15,8 +17,10 @@
 #define DISPLAY_DRIVER DISPLAY_DRIVER_U8G2_SSD1306
 constexpr int DISPLAY_WIDTH  = 128;
 constexpr int DISPLAY_HEIGHT = 64;
-constexpr int NUM_WAVEFORM_SAMPLES = DISPLAY_WIDTH * 2;
+
+constexpr int NUM_WAVEFORM_SAMPLES = DISPLAY_WIDTH;
 constexpr uint8_t DISPLAY_I2C_ADDRESS = 0x3C;
+
 constexpr bool DISPLAY_INVERT_COLORS = false;
 
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
@@ -34,16 +38,11 @@ constexpr bool DISPLAY_INVERT_COLORS = false;
 
 
 // zoom screen defaults
-constexpr float DEFAULT_HORIZ_ZOOM = 3.0f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
+constexpr float DEFAULT_HORIZ_ZOOM = 1.0f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
 constexpr float DEFAULT_VERT_SCALE = 2.0f; // amplitude schaal factor
-constexpr float ZOOM_MIN = 0.2f;
-constexpr float ZOOM_MAX = 20.0f;
-constexpr float ZOOM_STEP = 0.1f;
-constexpr float ZOOM_BIG_STEP = 0.5f;
 
 // samplepaths:
-// /1.wav /2.wav /3.wav /4.wav /5.wav /6.wav
-// i want an array of those paths to use for the creation of multiple players
+
 constexpr const char* SAMPLE_PATHS[] = {
     "/1.wav",
     "/2.wav",
@@ -74,7 +73,7 @@ constexpr int SPI_MOSI_PIN = 23; // MOSI
 constexpr int SPI_SCK_PIN  = 18; // SCLK 
 constexpr int SPI_MISO_PIN = 19; // MISO 
 
-constexpr int I2S_PIN_BCK  = 14;
-constexpr int I2S_PIN_WS   = 15;
-constexpr int I2S_PIN_DATA = 32;
+constexpr int I2S_PIN_BCK  = 14; // Bit Clock
+constexpr int I2S_PIN_WS   = 15; // Word Select (LRCLK)
+constexpr int I2S_PIN_DATA = 32; // DIN
 
