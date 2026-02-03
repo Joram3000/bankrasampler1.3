@@ -1,9 +1,8 @@
-#include "input.h"
+#include "button.h"
 #include <Arduino.h>
-#include <cmath>
 #include <AudioTools.h>
 #include "config.h"
-
+#include "mux.h"
 
 // Implementations for Button
 Button::Button(int pinOrChannel, const char* samplePath, bool activeLow, bool useMultiplexer)
@@ -75,7 +74,10 @@ const char* Button::getPath() const { return samplePath; }
 
 
 bool Button::readPressedHardware() const {
-  // Geen multiplexer-ondersteuning in deze implementatie
+  if (useMultiplexer) {
+    return readMuxActiveState(static_cast<uint8_t>(pin), activeLow);
+  }
   int level = digitalRead(pin);
   return activeLow ? (level == LOW) : (level == HIGH);
 }
+

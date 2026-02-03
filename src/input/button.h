@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Arduino.h>
-#include <functional>
 
 // Klasse voor het beheren van een knop met debounce en latching functionaliteit
 // Ondersteunt zowel directe GPIO-pinnen als multiplexer-kanalen
@@ -30,5 +29,3 @@ private:
 };
 
 
-
-// een button class is dus: pinnumber, samplepad, active low of high, multiplexer of niet
