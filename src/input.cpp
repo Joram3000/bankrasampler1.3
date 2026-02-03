@@ -37,7 +37,7 @@ bool Button::update(uint32_t now) {
      if (!latched && (now - lastTriggerTime) > BUTTON_RETRIGGER_GUARD_MS) {
         lastTriggerTime = now;
         latched = true;
-        if (Serial) {
+        if (DEBUGMODE) {
           Serial.print(F("Button pressed: "));
           Serial.println(samplePath ? samplePath : "<unnamed>");
         }
@@ -45,7 +45,7 @@ bool Button::update(uint32_t now) {
       }
     } else {
       latched = false;
-      if (Serial) {
+      if (DEBUGMODE) {
         Serial.print(F("Button released: "));
         Serial.println(samplePath ? samplePath : "<unnamed>");
       }
