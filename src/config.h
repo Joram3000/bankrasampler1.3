@@ -36,14 +36,16 @@ constexpr bool DISPLAY_INVERT_COLORS = false;
 
 
 // zoom screen defaults
-constexpr float DEFAULT_HORIZ_ZOOM = 2.0f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
-constexpr float DEFAULT_VERT_SCALE = 3.0f; // amplitude schaal factor
+constexpr float DEFAULT_HORIZ_ZOOM = 0.6f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
+constexpr float DEFAULT_VERT_SCALE = 2.0f; // amplitude schaal factor
 
-constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2,4, 5, 6, 7}; // dit gaat van button 1 tot 6 , wat de muxpin is 
+// constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 7, 2,3, 6, 5, 4}; // dit gaat van button 1 tot 6 , wat de muxpin is 
+ constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2,4, 5, 6, 7}; // dit gaat van button 1 tot 6 , wat de muxpin is 
 constexpr size_t BUTTON_COUNT = BUTTON_CHANNEL_ON_MUX.size();
+
 constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND = 1;
 constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 0;
-// samplepaths:
+
 constexpr const char* SAMPLE_PATHS[] = {
     "/1.wav",
     "/2.wav",
@@ -52,19 +54,23 @@ constexpr const char* SAMPLE_PATHS[] = {
     "/5.wav",
     "/6.wav"
 };
-constexpr bool BUTTONS_ACTIVE_LOW = true;
+constexpr bool MUX_ACTIVE_LOW = true;
 
-constexpr uint32_t BUTTON_FADE_MS = 18;
-constexpr uint32_t BUTTON_DEBOUNCE_MS = 8;
-constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 20;
+constexpr uint32_t BUTTON_FADE_MS = 10;
+constexpr uint32_t BUTTON_DEBOUNCE_MS = 4;
+constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 10;
 // -----------------------------------------------------------------------------
   const int COPIED_ZERO_THRESHOLD = 3; // number of consecutive loops with copied==0
   static const size_t kScopeSilenceFramesPerLoop = 128; // number of silence frames to feed per loop when no audio
 
 
 constexpr int POT_PIN = 34;
-constexpr bool POT_POLARITY_INVERTED = true;
+#define POT_POLARITY_INVERTED 1
 constexpr uint32_t VOL_READ_INTERVAL_MS = 50; // read volume pot every 50ms
+
+constexpr int SWITCH_PIN_SETTINGS_MODE = 35; // dedicated pin (not muxed)
+static const uint32_t SETTINGS_POLL_INTERVAL_MS = 150;
+static const uint32_t SETTINGS_DEBOUNCE_MS = 50;
 
 constexpr int SD_CS_PIN    = 5;  // CS
 constexpr int SPI_MOSI_PIN = 23; // MOSI 
@@ -110,4 +116,14 @@ constexpr float LOW_PASS_Q_MAX      = 2.5f;
 constexpr float LOW_PASS_Q_STEP     = 0.05f;
 
 // Master bus compression (gentle glue on final output)
-constexpr bool     MASTER_COMPRESSOR_ENABLED          = true;
+constexpr bool     MASTER_COMPRESSOR_ENABLED    = true;
+
+// Initialization screen defaults (customize to change startup message and how
+// long the init animation should run)
+#ifndef INIT_SCREEN_MESSAGE
+#define INIT_SCREEN_MESSAGE "Opstarten..."
+#endif
+
+#ifndef INIT_SCREEN_DURATION_MS
+#define INIT_SCREEN_DURATION_MS 3000
+#endif
