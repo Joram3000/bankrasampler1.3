@@ -39,6 +39,10 @@ constexpr bool DISPLAY_INVERT_COLORS = false;
 constexpr float DEFAULT_HORIZ_ZOOM = 2.0f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
 constexpr float DEFAULT_VERT_SCALE = 3.0f; // amplitude schaal factor
 
+constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2,4, 5, 6, 7}; // dit gaat van button 1 tot 6 , wat de muxpin is 
+constexpr size_t BUTTON_COUNT = BUTTON_CHANNEL_ON_MUX.size();
+constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND = 1;
+constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 0;
 // samplepaths:
 constexpr const char* SAMPLE_PATHS[] = {
     "/1.wav",
@@ -48,20 +52,7 @@ constexpr const char* SAMPLE_PATHS[] = {
     "/5.wav",
     "/6.wav"
 };
-// dit zijn channels op de input-mux (SN74HC151)
-constexpr std::array<uint8_t, 6> BUTTON_CHANNELS = { 3, 2,4, 5, 6, 7};
-constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND = 1;
-constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 0;
-// constexpr int NUM_SAMPLES = sizeof(SAMPLE_PATHS) / sizeof(SAMPLE_PATHS[0]);
-constexpr size_t BUTTON_COUNT = BUTTON_CHANNELS.size();
 constexpr bool BUTTONS_ACTIVE_LOW = true;
-
-// pinnen waar de knopjes aan zitten (moeten interne pullups hebben)
-constexpr int Button1 = 25;
-constexpr int Button2 = 26;
-constexpr int Button3 = 33;
-
-constexpr int BUTTON_PINS[] = {Button1, Button2, Button3};
 
 constexpr uint32_t BUTTON_FADE_MS = 18;
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 8;
