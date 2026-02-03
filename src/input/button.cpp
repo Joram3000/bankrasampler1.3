@@ -5,18 +5,9 @@
 #include "mux.h"
 
 // Implementations for Button
-Button::Button(int pinOrChannel, const char* samplePath, bool activeLow, bool useMultiplexer)
-  : pin(pinOrChannel), samplePath(samplePath), activeLow(activeLow), useMultiplexer(useMultiplexer) {}
+Button::Button(int pinOrChannel, const char* samplePath) : pin(pinOrChannel), samplePath(samplePath) {}
 
 void Button::begin() {
-  if (!useMultiplexer) {
-    // Configure internal pull resistor depending on activeLow.
-    // - activeLow == true: pressed == LOW, enable INPUT_PULLUP
-    // - activeLow == false: pressed == HIGH, enable INPUT_PULLDOWN (ESP32)
-    #if defined(INPUT_PULLDOWN)
-      pinMode(pin, activeLow ? INPUT_PULLUP : INPUT_PULLDOWN);
-    #endif
-  }
   rawState = false;
   debouncedState = false;
   lastDebounceTime = 0;
@@ -75,7 +66,10 @@ const char* Button::getPath() const { return samplePath; }
 
 bool Button::readPressedHardware() const {
   if (useMultiplexer) {
-    return readMuxActiveState(static_cast<uint8_t>(pin), activeLow);
+    // Mux module centrally tracks its active-low polarity (set by
+    // initMuxScanner). Let the mux module interpret the line state so we
+    // don't duplicate the polarity flag across modules.
+    return readMuxActiveState(static_cast<uint8_t>(pin));
   }
   int level = digitalRead(pin);
   return activeLow ? (level == LOW) : (level == HIGH);

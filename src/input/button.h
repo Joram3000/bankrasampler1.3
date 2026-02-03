@@ -6,7 +6,7 @@
 // Ondersteunt zowel directe GPIO-pinnen als multiplexer-kanalen
 class Button {
 public:
-  Button(int pinOrChannel, const char* samplePath, bool activeLow = true, bool useMultiplexer = false);
+  Button(int pinOrChannel, const char* samplePath);
   void begin();
   bool update(uint32_t now);
   void release();
