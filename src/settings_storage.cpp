@@ -62,25 +62,23 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
 		Serial.println("Failed to open settings file for write");
 		return;
 	}
-	float z = settingsScreen ? settingsScreen->getZoom() : 1.0f;
-	char buf[32];
-	snprintf(buf, sizeof(buf), "zoom=%.2f\n", z);
-	f.print(buf);
-	if (settingsScreen) {
-		char buf2[64];
-		snprintf(buf2, sizeof(buf2), "delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
-		f.print(buf2);
-		snprintf(buf2, sizeof(buf2), "delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
-		f.print(buf2);
-		snprintf(buf2, sizeof(buf2), "filter_hz=%.0f\n", settingsScreen->getFilterCutoffHz());
-		f.print(buf2);
-		snprintf(buf2, sizeof(buf2), "filter_q=%.2f\n", settingsScreen->getFilterQ());
-		f.print(buf2);		
-		bool ce = settingsScreen->getCompressorEnabled();
-		snprintf(buf2, sizeof(buf2), "comp_enabled=%d\n", ce ? 1 : 0);
-		f.print(buf2);
-	}
+	// print all the settings to Serial and to file
+	Serial.printf("Saving settings to SD card:\n");
+	Serial.printf(" zoom=%f\n", settingsScreen->getZoom());
+	f.printf("zoom=%f\n", settingsScreen->getZoom());
+	Serial.printf(" delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
+	f.printf("delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
+	Serial.printf(" delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
+	f.printf("delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
+	Serial.printf(" filter_hz=%.0f\n", settingsScreen->getFilterCutoffHz());
+	f.printf("filter_hz=%.0f\n", settingsScreen->getFilterCutoffHz());
+	Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
+	f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
+	Serial.printf(" comp_enabled=%s\n", settingsScreen->getCompressorEnabled() ? "true" : "false");
+	f.printf("comp_enabled=%s\n", settingsScreen->getCompressorEnabled() ? "true" : "false");
+	Serial.println("Settings saved.");
+
+
 	f.flush();
 	f.close();
-	Serial.printf("Saved zoom=%.2f to settings\n", z);
 }
