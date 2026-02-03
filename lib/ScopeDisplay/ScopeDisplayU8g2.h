@@ -9,7 +9,7 @@
 #include "config.h"
 
       const bool useSmoothing = true;
-      const float smoothingAlpha = 0.6f;
+      const float smoothingAlpha = 0.8f;
 
 class ScopeDisplayU8g2 {
   private:
@@ -136,44 +136,44 @@ class ScopeDisplayU8g2 {
           prevYf = static_cast<float>(y);
         }
 
-        // // Draw visual echoes (shifted copies) based on delayMs & delayFeedback.
-        // // We compute a pixel offset from delay (ms) -> samples -> pixels, then draw
-        // // a small pixel for each echo copy to keep it subtle.
-        // if (delayMs > 0.5f && delayFeedback > 0.01f && displayedSamples > 0 && delaySampleRate > 0) {
-        //   int nCopies = static_cast<int>(std::ceil(delayFeedback * static_cast<float>(MAX_ECHO_COPIES)));
-        //   nCopies = std::min(std::max(nCopies, 1), MAX_ECHO_COPIES);
-        //   float delaySamples = (delayMs / 1000.0f) * static_cast<float>(delaySampleRate);
-        //   float pxPerSample = static_cast<float>(kScreenWidth) / static_cast<float>(displayedSamples);
-        //   float offsetPx = delaySamples * pxPerSample;
-        //   if (offsetPx < 1.0f) offsetPx = 1.0f;
+        // Draw visual echoes (shifted copies) based on delayMs & delayFeedback.
+        // We compute a pixel offset from delay (ms) -> samples -> pixels, then draw
+        // a small pixel for each echo copy to keep it subtle.
+        if (delayMs > 0.5f && delayFeedback > 0.01f && displayedSamples > 0 && delaySampleRate > 0) {
+          int nCopies = static_cast<int>(std::ceil(delayFeedback * static_cast<float>(MAX_ECHO_COPIES)));
+          nCopies = std::min(std::max(nCopies, 1), MAX_ECHO_COPIES);
+          float delaySamples = (delayMs / 1000.0f) * static_cast<float>(delaySampleRate);
+          float pxPerSample = static_cast<float>(kScreenWidth) / static_cast<float>(displayedSamples);
+          float offsetPx = delaySamples * pxPerSample;
+          if (offsetPx < 1.0f) offsetPx = 1.0f;
 
-        //   for (int c = 1; c <= nCopies; ++c) {
-        //     float txf = static_cast<float>(x) + static_cast<float>(c) * offsetPx;
-        //     int tx = static_cast<int>(roundf(txf));
-        //     if (tx < 0 || tx >= kScreenWidth) continue;
+          for (int c = 1; c <= nCopies; ++c) {
+            float txf = static_cast<float>(x) + static_cast<float>(c) * offsetPx;
+            int tx = static_cast<int>(roundf(txf));
+            if (tx < 0 || tx >= kScreenWidth) continue;
 
-        //     float decay = 1.0f - (static_cast<float>(c) / static_cast<float>(nCopies + 1));
-        //     float echoY = scopeCenter - (baseAmp * decay);
-        //     float smoothEchoY = echoY;
-        //     if (useSmoothing) {
-        //       if (!isfinite(prevYfEcho[c - 1])) prevYfEcho[c - 1] = echoY;
-        //       smoothEchoY = (smoothingAlpha * echoY) + ((1.0f - smoothingAlpha) * prevYfEcho[c - 1]);
-        //     }
-        //     int yEcho = constrain(static_cast<int>(round(smoothEchoY)), 0, kScreenHeight - 1);
-        //     if (prevXEcho[c - 1] >= 0) {
-        //       int yPrev = constrain(static_cast<int>(round(prevYfEcho[c - 1])), 0, kScreenHeight - 1);
-        //       display->drawLine(prevXEcho[c - 1], yPrev, tx, yEcho);
-        //     } else {
-        //       display->drawPixel(tx, yEcho);
-        //     }
-        //     const int echoHalfHeight = 5;
-        //     int echoTop = constrain(yEcho - echoHalfHeight, 0, kScreenHeight - 1);
-        //     int echoBottom = constrain(yEcho + echoHalfHeight - 1, 0, kScreenHeight - 1);
-        //     display->drawLine(tx, echoTop, tx, echoBottom);
-        //     prevXEcho[c - 1] = tx;
-        //     prevYfEcho[c - 1] = smoothEchoY;
-        //   }
-        // }
+            float decay = 1.0f - (static_cast<float>(c) / static_cast<float>(nCopies + 1));
+            float echoY = scopeCenter - (baseAmp * decay);
+            float smoothEchoY = echoY;
+            if (useSmoothing) {
+              if (!isfinite(prevYfEcho[c - 1])) prevYfEcho[c - 1] = echoY;
+              smoothEchoY = (smoothingAlpha * echoY) + ((1.0f - smoothingAlpha) * prevYfEcho[c - 1]);
+            }
+            int yEcho = constrain(static_cast<int>(round(smoothEchoY)), 0, kScreenHeight - 1);
+            if (prevXEcho[c - 1] >= 0) {
+              int yPrev = constrain(static_cast<int>(round(prevYfEcho[c - 1])), 0, kScreenHeight - 1);
+              display->drawLine(prevXEcho[c - 1], yPrev, tx, yEcho);
+            } else {
+              display->drawPixel(tx, yEcho);
+            }
+            const int echoHalfHeight = 5;
+            int echoTop = constrain(yEcho - echoHalfHeight, 0, kScreenHeight - 1);
+            int echoBottom = constrain(yEcho + echoHalfHeight - 1, 0, kScreenHeight - 1);
+            display->drawLine(tx, echoTop, tx, echoBottom);
+            prevXEcho[c - 1] = tx;
+            prevYfEcho[c - 1] = smoothEchoY;
+          }
+        }
 
         // Draw the 2/3-amplitude overlay
         if (useSmoothing) {

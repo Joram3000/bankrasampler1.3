@@ -36,8 +36,8 @@ constexpr bool DISPLAY_INVERT_COLORS = false;
 
 
 // zoom screen defaults
-constexpr float DEFAULT_HORIZ_ZOOM = 0.6f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
-constexpr float DEFAULT_VERT_SCALE = 2.0f; // amplitude schaal factor
+constexpr float DEFAULT_HORIZ_ZOOM = 0.8f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
+constexpr float DEFAULT_VERT_SCALE = 7.0f; // amplitude schaal factor
 
 // constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 7, 2,3, 6, 5, 4}; // dit gaat van button 1 tot 6 , wat de muxpin is 
  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2,4, 5, 6, 7}; // dit gaat van button 1 tot 6 , wat de muxpin is 
@@ -97,7 +97,7 @@ constexpr float DEFAULT_DELAY_DEPTH      = 0.40f;
 constexpr float DEFAULT_DELAY_FEEDBACK   = 0.45f;
 
 constexpr float DELAY_TIME_MIN_MS        = 50.0f;
-constexpr float DELAY_TIME_MAX_MS        = 1200.0f;
+constexpr float DELAY_TIME_MAX_MS        = 1000.0f;
 constexpr float DELAY_TIME_STEP_MS       = 10.0f;
 
 constexpr float DELAY_FEEDBACK_MIN       = 0.0f;

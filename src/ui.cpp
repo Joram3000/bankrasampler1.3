@@ -89,3 +89,4 @@ void setScopeDelayParams(float delayMs, float feedback) {
 void setScopeDelaySampleRate(int32_t sampleRate) {
   scopeDisplay.setDelaySampleRate(sampleRate);
 }
+
