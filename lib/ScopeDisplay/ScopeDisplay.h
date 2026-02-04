@@ -7,8 +7,9 @@
 #include <Arduino.h>
 #include <algorithm>
 #include <cmath>
-
-#include "config.h"
+#include "config/settings.h"
+#include "config/screen.h"
+// #include "config.h"
 
 /**
  * ScopeDisplay - Beheert OLED display met oscilloscope visualisatie

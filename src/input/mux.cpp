@@ -1,10 +1,10 @@
 #include "mux.h"
 #include <Arduino.h>
 #include <AudioTools.h>
-#include "config.h"
+#include "config/pins.h"
+#include "config/config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-
 class Sn74hc151Mux {
 public:
   void begin();
@@ -17,13 +17,10 @@ private:
 };
 
 Sn74hc151Mux gInputMux;
-
-// 74HC151 heeft 8 kanalen
-static const uint8_t MUX_CHANNELS = 8;
+static const uint8_t MUX_CHANNELS = 8; // 74HC151 heeft 8 kanalen
 
 // change-detect state
 static bool muxLastState[MUX_CHANNELS];
-static bool muxActiveLow = MUX_ACTIVE_LOW;
 static MuxChangeCallback muxChangeCallback = nullptr;
 
 // Mutex used for ISR/Timer critical sections (ESP32 portMUX)
@@ -67,8 +64,6 @@ int Sn74hc151Mux::readChannel(uint8_t channel) {
   selectChannel(channel);
   delayMicroseconds(INPUT_MUX_SETTLE_TIME_US);
   if (INPUT_MUX_PIN_Y < 0) {
-    // No Y pin configured: return HIGH (not-active) to be safe. Caller should
-    // ensure pins are configured in config.h.
     return HIGH;
   }
   return digitalRead(INPUT_MUX_PIN_Y);
@@ -79,8 +74,7 @@ int Sn74hc151Mux::readChannel(uint8_t channel) {
 
 bool readMuxActiveState(uint8_t channel) {
   int level = gInputMux.readChannel(channel);
-  // Use the module-level `muxActiveLow` flag configured via initMuxScanner
-  return muxActiveLow ? (level == LOW) : (level == HIGH);
+  return MUX_ACTIVE_LOW ? (level == LOW) : (level == HIGH);
 }
 
 static void initMuxState() {
@@ -119,9 +113,8 @@ static void initMuxTimer() {
   timerAlarmEnable(muxTimer);
 }
 
-void initMuxScanner(uint32_t scanIntervalUs, bool activeLow) {
+void initMuxScanner(uint32_t scanIntervalUs) {
   muxScanIntervalUs = scanIntervalUs;
-  muxActiveLow = activeLow;
   initMuxState();
   initMuxTimer();
 }

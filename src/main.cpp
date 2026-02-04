@@ -14,7 +14,8 @@
 #include "settings_storage.h"
 #include "settings_mode.h"
 #include "input/mux.h"
-
+#include "config/screen.h"
+#include "config/config.h"
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
 #include "InitializationScreenU8g2.h"
 #endif
@@ -51,6 +52,7 @@ Button buttons[BUTTON_COUNT] = {
   Button(BUTTON_CHANNEL_ON_MUX[4], SAMPLE_PATHS[4]),
   Button(BUTTON_CHANNEL_ON_MUX[5], SAMPLE_PATHS[5]),
 };
+
 static bool prevLatched[BUTTON_COUNT] = { false, false, false, false, false, false };
 
 void playSample(int index);
@@ -223,7 +225,7 @@ void setup() {
   initPlayer();  
   initDisplay();
   setMuxChangeCallback(onMuxChange); 
-  initMuxScanner(5000, true);
+  initMuxScanner(5000);
   SettingsUiDependencies settingsDeps;
   settingsDeps.delayEffect = &delayEffect;
   settingsDeps.filterEffect = &filterEffect;

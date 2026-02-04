@@ -2,8 +2,9 @@
 
 #include <AudioTools.h>
 #include <algorithm>
+// #include "config/config.h"
+#include "config/screen.h"
 
-#include "config.h"
 
 /**
  * Custom output stream die samples captured voor waveform display

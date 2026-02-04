@@ -2,8 +2,7 @@
 
 #include <Arduino.h>
 
-// Klasse voor het beheren van een knop met debounce en latching functionaliteit
-// Ondersteunt zowel directe GPIO-pinnen als multiplexer-kanalen
+
 class Button {
 public:
   Button(int pinOrChannel, const char* samplePath);
@@ -11,9 +10,9 @@ public:
   bool update(uint32_t now);
   void release();
   void sync(uint32_t now);
-  bool readRaw() const;
+  // bool readRaw() const;
   bool isLatched() const;
-  const char* getPath() const;
+  // const char* getPath() const;
 
 private:
   int pin;
@@ -22,7 +21,7 @@ private:
   bool rawState = false;
   bool debouncedState = false;
   bool latched = false;
-  bool useMultiplexer = false;
+  // bool useMultiplexer = false;
   uint32_t lastDebounceTime = 0;
   uint32_t lastTriggerTime = 0;
   bool readPressedHardware() const;

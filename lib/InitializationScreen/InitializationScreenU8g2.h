@@ -3,7 +3,8 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 
-#include "config.h"
+#include "config/screen.h"
+
 #include "InitializationScreen.h"
 
 class InitializationScreenU8g2 : public IInitializationScreen {

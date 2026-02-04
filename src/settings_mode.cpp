@@ -1,6 +1,6 @@
 #include "settings_mode.h"
-
-#include "config.h"
+#include "config/config.h"
+#include "config/settings.h"
 #include "settings_storage.h"
 #include "ui.h"
 #include "SettingsScreen.h"

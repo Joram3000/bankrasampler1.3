@@ -6,7 +6,7 @@
 #include <Arduino.h>
 #include <functional>
 
-#include "config.h"
+#include "config/settings.h"
 #include "SettingsScreen.h"
 
 

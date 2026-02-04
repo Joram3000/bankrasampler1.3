@@ -1,7 +1,7 @@
 #include "button.h"
 #include <Arduino.h>
 #include <AudioTools.h>
-#include "config.h"
+#include "config/config.h"
 #include "mux.h"
 
 // Implementations for Button
@@ -55,23 +55,17 @@ void Button::sync(uint32_t now) {
   lastTriggerTime = raw ? now : 0;
 }
 
-bool Button::readRaw() const {
-  return readPressedHardware();
-}
+// bool Button::readRaw() const {
+//   return readPressedHardware();
+// }
 
 bool Button::isLatched() const { return latched; }
 
-const char* Button::getPath() const { return samplePath; }
+// const char* Button::getPath() const { return samplePath; }
 
 
 bool Button::readPressedHardware() const {
-  if (useMultiplexer) {
-    // Mux module centrally tracks its active-low polarity (set by
-    // initMuxScanner). Let the mux module interpret the line state so we
-    // don't duplicate the polarity flag across modules.
-    return readMuxActiveState(static_cast<uint8_t>(pin));
-  }
-  int level = digitalRead(pin);
-  return activeLow ? (level == LOW) : (level == HIGH);
+  return readMuxActiveState(static_cast<uint8_t>(pin));
+  
 }
 

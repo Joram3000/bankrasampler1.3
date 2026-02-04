@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <functional>
 
-#include "config.h"
+#include "config/settings.h"
 #include "SettingsScreen.h"
 
 // A trimmed-down Adafruit-based settings screen that exposes the same
