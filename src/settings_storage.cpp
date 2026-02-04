@@ -10,12 +10,14 @@ constexpr const char* kSettingsPath = "/settings.txt";
 }
 
 void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
-	if (!settingsScreen)
+	if (!settingsScreen) {
 	Serial.println("No settings screen provided, cannot load settings");
 	return;
-	if (!SD.exists(kSettingsPath)) 
-	Serial.println("Settings file does not exist on SD card, using defaults");
-	return;
+	}
+	if (!SD.exists(kSettingsPath)) {
+		Serial.println("Settings file does not exist on SD card, using defaults");
+		return;
+	}
 	File f = SD.open(kSettingsPath, FILE_READ);
 	if (!f) {
 		Serial.println("Failed to open settings file for read");

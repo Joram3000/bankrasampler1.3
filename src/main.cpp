@@ -34,7 +34,6 @@ static FilteredDelayMixerStream mixer;
 
 // State
 int currentSample = -1;
-// String currentSamplePath = "";
 static uint32_t lastVolSample = 0;
 static float lastVol = -1.0f;
 static int copiedZeroCount = 0;
@@ -105,7 +104,7 @@ void playSample(int index) {
 void stopSample(int index) {
   if (index < 0 || index >= BUTTON_COUNT) return;
   if (currentSample != index) return;
-  player.setActive(false);
+  player.stop();
   currentSample = -1;
   if (DEBUGMODE) {
     Serial.print(F("STOP: "));
@@ -118,7 +117,7 @@ void initPlayer() {
   player.setOutput(mixer);
   player.setAutoNext(false);
   player.setSilenceOnInactive(true); // doet dit iets? When enabled, writes zeros while inactive to keep sinks alive
-  player.setDelayIfOutputFull(1); // Sets delay (ms) to wait when output is ful
+  player.setDelayIfOutputFull(5); // Sets delay (ms) to wait when output is ful
   player.setFadeTime(BUTTON_FADE_MS);
   player.begin();
   player.stop();
@@ -193,6 +192,7 @@ void initDisplay() {
   Serial.print("Init done, switching to Performance mode");
     setOperatingMode(OperatingMode::Performance);
   }
+  
 static void releaseAllButtons() {
   for (int i = 0; i < BUTTON_COUNT; ++i) {
     buttons[i].release();
@@ -231,6 +231,8 @@ void setup() {
   settingsDeps.filterEffect = &filterEffect;
   settingsDeps.releaseButtons = releaseAllButtons;
   initSettingsUi(settingsDeps);
+
+
   initSettingsModeSwitch();
 }
 
@@ -243,7 +245,7 @@ void loop() {
   if (copied == 0) {
       // Als er geen nieuwe data binnenkomt, toch de delay-tail blijven
       // uitsturen zodat de reverb hoorbaar blijft.
-    mixer.renderTailFrames(64);
+     mixer.renderTailFrames(64);
     }
     
     if (!mixer.tailActive()) {
@@ -277,9 +279,9 @@ void loop() {
   checkPot(now); 
   
   muxScanTick();
-
   checkSettingsMode(now);
   
+
   if (getOperatingMode() == OperatingMode::Settings) {
     updateSettingsScreenUi();
   }
