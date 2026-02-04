@@ -68,8 +68,7 @@ class ScopeDisplay {
           // Render waveform scope
           renderWaveform();
 
-          // Render status overlay
-          renderStatus();
+ 
           
           display->display();
           xSemaphoreGive(displayMutex);
@@ -91,7 +90,7 @@ class ScopeDisplay {
   const int scopeCenter = kScreenHeight / 2;
       if (waveformSamples <= 0 || !waveformBuffer) return;
 
-      const bool useSmoothing = true;
+      const bool useSmoothing = false;
       const float smoothingAlpha = 0.6f;
       const bool drawEnvelope = false;
 
@@ -133,9 +132,6 @@ class ScopeDisplay {
         float sampleNext = static_cast<float>(waveformBuffer[nextIdx]);
         float val = sampleCenter * (1.0f - frac) + sampleNext * frac;
 
-        if (drawEnvelope) {
-          // optionele envelope-rendering (niet gewijzigd)
-        }
 
   float yf = scopeCenter - (val * ((kScreenHeight / 2) * vertScale) / 32768.0f);
 
@@ -164,24 +160,6 @@ class ScopeDisplay {
       lastDisplayY = prevYf;
     }
 
-    void renderStatus() {
-      display->setTextSize(1);
-      display->setTextColor(SSD1306_WHITE);
-      display->setCursor(0, 0);
-
-      if (isPlaying) {
-        display->print("> ");
-      } else {
-        display->print("|| ");
-      }
-
-      if (currentFile.length() > 0) {
-        display->println(currentFile);
-      } else {
-        display->println("-");
-      }
-    }
-    
   public:
     /**
      * Constructor

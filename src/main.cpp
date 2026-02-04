@@ -12,25 +12,21 @@
 #include "input/button.h"
 #include "ui.h"
 #include "settings_storage.h"
-#include "SettingsScreen.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+#include "settings_mode.h"
 #include "input/mux.h"
 
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
-#include "SettingsScreenAdafruit.h"
-#elif DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-#include "SettingsScreenU8g2.h"
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
 #include "InitializationScreenU8g2.h"
 #endif
 
+// Audio system
 AudioInfo info(44100, 2, 16);
-
 // ===== Single audio player =====
 AudioSourceSD source("/", "wav");
 WAVDecoder decoder;
 AudioPlayer player(source, scopeI2s, decoder);
 
+// ===== Effects =====
 static LowPassFilter<float> filterEffect;
 static Delay delayEffect;
 static FilteredDelayMixerStream mixer;
@@ -40,28 +36,11 @@ int currentSample = -1;
 // String currentSamplePath = "";
 static uint32_t lastVolSample = 0;
 static float lastVol = -1.0f;
-static SemaphoreHandle_t displayMutex = nullptr;
 static int copiedZeroCount = 0;
 
-// settings States
-float currentFilterCutoffHz = LOW_PASS_CUTOFF_HZ;
-float currentFilterQ = LOW_PASS_Q;
-float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
-float currentDelayDepth = DEFAULT_DELAY_DEPTH;
-float currentDelayFeedback = DEFAULT_DELAY_FEEDBACK;
-bool currentCompEnabled = MASTER_COMPRESSOR_ENABLED;
-
-static ISettingsScreen* settingsScreen = nullptr;
+// UI Screens
 static InitializationScreenU8g2* initializationScreen = nullptr;
-enum class OperatingMode { Performance, Settings, Initializing };
-OperatingMode currentMode = OperatingMode::Initializing;
-static OperatingMode lastOperatingMode = OperatingMode::Initializing;
 
-
-// Settings mode switch state
-bool settingsModeRawState = false;
-bool settingsModeDebouncedState = false;
-uint32_t settingsModeLastDebounceTime = 0;
 
 // --- Buttons ---
 Button buttons[BUTTON_COUNT] = {
@@ -72,7 +51,6 @@ Button buttons[BUTTON_COUNT] = {
   Button(BUTTON_CHANNEL_ON_MUX[4], SAMPLE_PATHS[4]),
   Button(BUTTON_CHANNEL_ON_MUX[5], SAMPLE_PATHS[5]),
 };
-
 static bool prevLatched[BUTTON_COUNT] = { false, false, false, false, false, false };
 
 void playSample(int index);
@@ -88,31 +66,11 @@ static int findButtonIndexForChannel(uint8_t channel) {
 }
 
 // this is where the buttons are mapped to settings screen actions
-static void handleSettingsButtonTrigger(size_t buttonIndex) {
-  if (!settingsScreen) return;
-  ISettingsScreen::Button mapped;
-  switch (buttonIndex) {
-    case 0: mapped = ISettingsScreen::Button::Back;     break; 
-    case 1: mapped = ISettingsScreen::Button::Up;      break;
-    case 2: mapped = ISettingsScreen::Button::Ok;      break; 
-    case 3: mapped = ISettingsScreen::Button::Left;      break; 
-    case 4: mapped = ISettingsScreen::Button::Down;        break;
-    case 5: mapped = ISettingsScreen::Button::Right;        break; 
-    default: return;
-  }
-  settingsScreen->onButton(mapped);
-}
-
 static void onMuxChange(uint8_t channel, bool active) {
   int index = findButtonIndexForChannel(channel);
   if (index < 0) return;
 
-  if (currentMode == OperatingMode::Settings) {
-    if (active) {
-      handleSettingsButtonTrigger(static_cast<size_t>(index));
-    }
-    return;
-  }
+  if (handleSettingsButtonInput(static_cast<size_t>(index), active)) return;
 
   if (active) {
     playSample(index);
@@ -179,19 +137,13 @@ void initAudio() {
     scopeI2s.setAudioInfo(info);
   }
 
-  filterEffect.begin(4520, info.sample_rate, 0.5f); // cutoff 7kHz, Q=0.5
+  filterEffect.begin(4520, info.sample_rate, 0.5f);
 
   delayEffect.setSampleRate(info.sample_rate);
-  delayEffect.setFeedback(0.8f); // feedback in %
-  delayEffect.setDepth(0.9f); // depth in %
-  delayEffect.setDuration(300); // ms delay
+  delayEffect.setFeedback(0.8f); 
+  delayEffect.setDepth(0.9f); 
+  delayEffect.setDuration(300);
   delayEffect.setActive(true);
-
-  // Let the scope visualization know about the delay settings so it can
-  // render visual echoes.  Forward sample rate, duration and feedback.
-  // setScopeDelaySampleRate(info.sample_rate);
-  // setScopeDelayParams(static_cast<float>(delayEffect.getDuration()), delayEffect.getFeedback());
-
 
   mixer.setAudioInfo(info);
   mixer.setOutput(scopeI2s);
@@ -237,185 +189,18 @@ void initDisplay() {
     delay(1000);
 #endif
   Serial.print("Init done, switching to Performance mode");
-    currentMode = OperatingMode::Performance;
+    setOperatingMode(OperatingMode::Performance);
   }
-
-
-static void initSettingsScreen() {
-  if (settingsScreen) return;
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-  if (auto* display = getU8g2Display()) {
-    settingsScreen = new SettingsScreenU8g2(*display);
-  } else {
-    Serial.println("Settings screen unavailable: no U8G2 display detected");
-    return;
-  }
-#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
-  if (auto* display = getAdafruitDisplay()) {
-    settingsScreen = new SettingsScreenAdafruit(*display);
-  } else {
-    Serial.println("Settings screen unavailable: no Adafruit SSD1306 display detected");
-    return;
-  }
-#else
-  return;
-#endif
-  settingsScreen->begin();
-  settingsScreen->setZoomCallback([](float zoomFactor) {
-    setScopeHorizZoom(zoomFactor);
-  });
-  settingsScreen->setDelayTimeCallback([](float durationMs) {
-    currentDelayTimeMs = durationMs;
-    delayEffect.setDuration(static_cast<uint32_t>(durationMs));
-  });
-  
-  settingsScreen->setDelayFeedbackCallback([](float feedback) {
-    currentDelayFeedback = feedback;
-    delayEffect.setFeedback(feedback);
-  });  
-  settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
-  settingsScreen->setDelayTimeMs(currentDelayTimeMs);
-  settingsScreen->setDelayFeedback(currentDelayFeedback);
-  settingsScreen->setFilterCutoffHz(currentFilterCutoffHz);
-  settingsScreen->setFilterQ(currentFilterQ);
-  settingsScreen->setCompressorEnabled(currentCompEnabled);  
-}
-
-static void applyOperatingModeChange(OperatingMode newMode);
-
-void initSettingsModeSwitch() {
-  pinMode(SWITCH_PIN_SETTINGS_MODE, INPUT);
-  bool settingsModeInit = (digitalRead(SWITCH_PIN_SETTINGS_MODE) == LOW);
-  settingsModeRawState = settingsModeDebouncedState = settingsModeInit;
-  applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
-
-  if(DEBUGMODE) {
-    Serial.print("Settings mode switch initialized to: ");
-    Serial.println(settingsModeDebouncedState ? "ON" : "OFF");
-  }
-} 
-
-static uint32_t settingsModeLastPoll = 0;
-
 static void releaseAllButtons() {
   for (int i = 0; i < BUTTON_COUNT; ++i) {
     buttons[i].release();
   }
 }
 
-static void showSavingOverlay(uint16_t durationMs) {
-  const char* message = "Saving...";
-  auto draw = [&]() {
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-    if (auto* display = getU8g2Display()) {
-      display->clearBuffer();
-      display->setFont(u8g2_font_6x12_tr);
-      int width = display->getDisplayWidth();
-      int height = display->getDisplayHeight();
-      int textWidth = display->getStrWidth(message);
-      int x = std::max(0, (width - textWidth) / 2);
-      int y = height / 2;
-      display->drawStr(x, y, message);
-      display->sendBuffer();
-    }
-#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
-    if (auto* display = getAdafruitDisplay()) {
-      display->clearDisplay();
-      display->setTextSize(1);
-      display->setTextColor(SSD1306_WHITE);
-      int16_t x1, y1;
-      uint16_t w, h;
-      display->getTextBounds(message, 0, 0, &x1, &y1, &w, &h);
-      int x = std::max(0, (static_cast<int>(display->width()) - static_cast<int>(w)) / 2);
-      int y = std::max(0, (static_cast<int>(display->height()) - static_cast<int>(h)) / 2);
-      display->setCursor(x, y);
-      display->print(message);
-      display->display();
-    }
-#endif
-  };
-
-  if (displayMutex) {
-    if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-      draw();
-      xSemaphoreGive(displayMutex);
-    }
-  } else {
-    draw();
-  }
-
-  if (durationMs > 0) {
-    delay(durationMs);
-  }
-}
-
-static void applyOperatingModeChange(OperatingMode newMode) {
-  if (newMode == OperatingMode::Settings && !settingsScreen) {
-    Serial.println("Settings mode requested but unavailable; reverting to performance mode");
-    newMode = OperatingMode::Performance;
-  }
-  if (newMode == lastOperatingMode) return;
-
-  if (newMode == OperatingMode::Settings) {
-    setScopeDisplaySuspended(true);
-    if (settingsScreen) settingsScreen->enter();
-    releaseAllButtons();
-  } else {
-    if (settingsScreen) settingsScreen->exit();
-    setScopeDisplaySuspended(false);
-    releaseAllButtons();
-    if (lastOperatingMode == OperatingMode::Settings) {
-      showSavingOverlay(250);
-      saveSettingsToSd(settingsScreen);
-    }
-  }
-
-  currentMode = newMode;
-  lastOperatingMode = newMode;
-}
-
-static void checkSettingsMode(uint32_t now) {
-  if ((now - settingsModeLastPoll) < SETTINGS_POLL_INTERVAL_MS) return;
-  settingsModeLastPoll = now;
-
-  bool raw = (digitalRead(SWITCH_PIN_SETTINGS_MODE) == LOW);
-  if (raw != settingsModeRawState) {
-    settingsModeRawState = raw;
-    settingsModeLastDebounceTime = now;
-  }
-
-  if ((now - settingsModeLastDebounceTime) >= SETTINGS_DEBOUNCE_MS && settingsModeDebouncedState != settingsModeRawState) {
-    settingsModeDebouncedState = settingsModeRawState;
-    applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
-    if (DEBUGMODE) {
-      Serial.print(F("Settings mode -> "));
-      Serial.println(settingsModeDebouncedState ? F("ON") : F("OFF"));
-    }
-
-  }
-}
-
-
-
-static void updateSettingsScreenUi() {
-  if (!settingsScreen) {
-    Serial.print("In settings mode loop without settings screen\n");
-    return;
-  }
-  if (displayMutex) {
-    if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-      settingsScreen->update();
-      xSemaphoreGive(displayMutex);
-    }
-  } else {
-    settingsScreen->update();
-  }
-}
-
-void checkVolume(uint32_t now) {
-if ((now - lastVolSample) >= VOL_READ_INTERVAL_MS) {
+void checkPot(uint32_t now) {
+if ((now - lastVolSample) >= POT_READ_INTERVAL_MS) {
     lastVolSample = now;
-    int raw = analogRead(POT_PIN); // ESP32: 0..4095
+    int raw = analogRead(POT_PIN);
     float norm = static_cast<float>(raw) / 4095.0f;
 #ifdef POT_POLARITY_INVERTED
     norm = 1.0f - norm;
@@ -439,13 +224,12 @@ void setup() {
   initDisplay();
   setMuxChangeCallback(onMuxChange); 
   initMuxScanner(5000, true);
-  initSettingsScreen();
-  loadSettingsFromSd(settingsScreen); 
+  SettingsUiDependencies settingsDeps;
+  settingsDeps.delayEffect = &delayEffect;
+  settingsDeps.filterEffect = &filterEffect;
+  settingsDeps.releaseButtons = releaseAllButtons;
+  initSettingsUi(settingsDeps);
   initSettingsModeSwitch();
-
-  if (auto mutexPtr = static_cast<SemaphoreHandle_t*>(getDisplayMutex())) {
-    displayMutex = *mutexPtr;
-  }
 }
 
 
@@ -488,14 +272,15 @@ void loop() {
     }
     
     
-    checkVolume(now); 
+  checkPot(now); 
   
-
   muxScanTick();
+
   checkSettingsMode(now);
-    if (currentMode == OperatingMode::Settings) {
-      updateSettingsScreenUi();
-    }
+  
+  if (getOperatingMode() == OperatingMode::Settings) {
+    updateSettingsScreenUi();
+  }
   
 }
 

@@ -28,3 +28,10 @@ void setScopeHorizZoom(float z);
 // Temporarily pause/resume the scope task when drawing custom overlays.
 void setScopeDisplaySuspended(bool suspended);
 
+// Settings screen factory (display-backend dependent).
+class ISettingsScreen; // forward
+ISettingsScreen* createSettingsScreen();
+
+// Small UI helper for a save overlay.
+void uiShowSavingOverlay(uint16_t durationMs);
+

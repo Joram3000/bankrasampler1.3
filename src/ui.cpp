@@ -4,6 +4,14 @@
 
 #include <AudioTools.h>
 #include <Wire.h>
+#include <algorithm>
+#include "SettingsScreen.h"
+
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+  #include "SettingsScreenAdafruit.h"
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+  #include "SettingsScreenU8g2.h"
+#endif
 
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
   #include <Adafruit_GFX.h>
@@ -80,4 +88,79 @@ void setScopeHorizZoom(float z) {
 
 void setScopeDisplaySuspended(bool suspended) {
   scopeDisplay.setSuspended(suspended);
+}
+
+ISettingsScreen* createSettingsScreen() {
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+    if (auto* display = getU8g2Display()) {
+        auto* s = new SettingsScreenU8g2(*display);
+        s->begin();
+        return s;
+    }
+    return nullptr;
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+    if (auto* display = getAdafruitDisplay()) {
+        auto* s = new SettingsScreenAdafruit(*display);
+        s->begin();
+        return s;
+    }
+    return nullptr;
+#else
+    return nullptr;
+#endif
+}
+
+void uiShowSavingOverlay(uint16_t durationMs) {
+    const char* message = "Saving...";
+    auto drawU8g2 = [&]() {
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+        if (auto* d = getU8g2Display()) {
+            d->clearBuffer();
+            d->setFont(u8g2_font_6x12_tr);
+            int w = d->getDisplayWidth();
+            int h = d->getDisplayHeight();
+            int tw = d->getStrWidth(message);
+            int x = std::max(0, (w - tw) / 2);
+            int y = h / 2;
+            d->drawStr(x, y, message);
+            d->sendBuffer();
+        }
+#endif
+    };
+
+    auto drawAdafruit = [&]() {
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+        if (auto* d = getAdafruitDisplay()) {
+            d->clearDisplay();
+            d->setTextSize(1);
+            d->setTextColor(SSD1306_WHITE);
+            int16_t x1, y1; uint16_t tw, th;
+            d->getTextBounds(message, 0, 0, &x1, &y1, &tw, &th);
+            int x = std::max(0, (static_cast<int>(d->width()) - static_cast<int>(tw)) / 2);
+            int y = std::max(0, (static_cast<int>(d->height()) - static_cast<int>(th)) / 2);
+            d->setCursor(x, y);
+            d->print(message);
+            d->display();
+        }
+#endif
+    };
+
+    if (auto mutexPtr = static_cast<SemaphoreHandle_t*>(getDisplayMutex())) {
+        if (xSemaphoreTake(*mutexPtr, pdMS_TO_TICKS(20)) == pdTRUE) {
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+            drawU8g2();
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+            drawAdafruit();
+#endif
+            xSemaphoreGive(*mutexPtr);
+        }
+    } else {
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+        drawU8g2();
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
+        drawAdafruit();
+#endif
+    }
+
+    if (durationMs > 0) delay(durationMs);
 }

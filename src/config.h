@@ -36,8 +36,8 @@ constexpr bool DISPLAY_INVERT_COLORS = false;
 
 
 // zoom screen defaults
-constexpr float DEFAULT_HORIZ_ZOOM = 0.8f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
-constexpr float DEFAULT_VERT_SCALE = 7.0f; // amplitude schaal factor
+constexpr float DEFAULT_HORIZ_ZOOM = 0.1f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
+constexpr float DEFAULT_VERT_SCALE = 1.0f; // amplitude schaal factor
 
 // constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 7, 2,3, 6, 5, 4}; // dit gaat van button 1 tot 6 , wat de muxpin is 
  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2,4, 5, 6, 7}; // dit gaat van button 1 tot 6 , wat de muxpin is 
@@ -66,7 +66,7 @@ constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 10;
 
 constexpr int POT_PIN = 34;
 #define POT_POLARITY_INVERTED 1
-constexpr uint32_t VOL_READ_INTERVAL_MS = 50; // read volume pot every 50ms
+constexpr uint32_t POT_READ_INTERVAL_MS = 50; // read volume pot every 50ms
 
 constexpr int SWITCH_PIN_SETTINGS_MODE = 35; // dedicated pin (not muxed)
 static const uint32_t SETTINGS_POLL_INTERVAL_MS = 150;
@@ -116,7 +116,7 @@ constexpr float LOW_PASS_Q_MAX      = 2.5f;
 constexpr float LOW_PASS_Q_STEP     = 0.05f;
 
 // Master bus compression (gentle glue on final output)
-constexpr bool     MASTER_COMPRESSOR_ENABLED    = true;
+constexpr bool MASTER_COMPRESSOR_ENABLED = true;
 
 // Initialization screen defaults (customize to change startup message and how
 // long the init animation should run)
