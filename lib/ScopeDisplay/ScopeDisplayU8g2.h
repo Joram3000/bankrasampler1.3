@@ -8,8 +8,8 @@
 
 #include "config.h"
 
-      const bool useSmoothing = true;
-      const float smoothingAlpha = 0.8f;
+      const bool useSmoothing = true; // deze moeten ook naar de settings dat is cool
+      const float smoothingAlpha = 0.6f; // deze ook naar settings 
 
 class ScopeDisplayU8g2 {
   private:
@@ -25,11 +25,6 @@ class ScopeDisplayU8g2 {
     float horizZoom = DEFAULT_HORIZ_ZOOM;
     float vertScale = DEFAULT_VERT_SCALE;
     float lastDisplayY = NAN;
-
-  // Delay/echo visualization parameters (updated from UI/audio)
-  float delayMs = 0.0f;        // delay duration in milliseconds
-  float delayFeedback = 0.0f;  // 0..1 feedback amount used to determine number of echoes
-  int32_t delaySampleRate = 44100; // sample rate used to convert ms->samples
 
     String currentFile;
     bool isPlaying;
@@ -63,8 +58,6 @@ class ScopeDisplayU8g2 {
       const int scopeCenter = kScreenHeight / 2;
       if (waveformSamples <= 0 || !waveformBuffer) return;
 
-
-
       int displayedSamples = std::max(1, static_cast<int>(waveformSamples / horizZoom));
       displayedSamples = std::min(displayedSamples, waveformSamples);
 
@@ -79,11 +72,26 @@ class ScopeDisplayU8g2 {
       int windowSize = std::max(1, static_cast<int>(ceilf((displayedSamples / (float)kScreenWidth))));
       int halfWin = (windowSize - 1) / 2;
 
-  float prevYf = isfinite(lastDisplayY) ? lastDisplayY : NAN;
-  // Separate previous Y values for the additional overlays so each can be
-  // smoothed independently without affecting the main waveform.
-      float prevYfTwoThird = NAN;
-      float prevYfThird = NAN;
+      // previous Y for main use (kept for compatibility with lastDisplayY)
+      float prevYf = isfinite(lastDisplayY) ? lastDisplayY : NAN;
+
+      // Define overlay multipliers (keeps same drawing order as original)
+      constexpr float overlayMultipliers[] = {
+        3.0f/3.0f, // full (3/3)
+        2.0f/3.0f, // 2/3
+        1.0f/3.0f, // 1/3
+        2.0f/4.0f, // 2/4
+        1.0f/4.0f, // 1/4
+        3.0f/4.0f,  // 3/4
+        4.0f/3.0f, // 4/3
+        5.0f/3.0f  // 5/3
+      };
+      constexpr int kNumOverlays = static_cast<int>(sizeof(overlayMultipliers) / sizeof(overlayMultipliers[0]));
+
+      // prev Y states for each overlay
+      float prevYs[kNumOverlays];
+      for (int i = 0; i < kNumOverlays; ++i) prevYs[i] = NAN;
+
       static constexpr int MAX_ECHO_COPIES = 5;
       float prevYfEcho[MAX_ECHO_COPIES];
       int prevXEcho[MAX_ECHO_COPIES];
@@ -91,6 +99,30 @@ class ScopeDisplayU8g2 {
         prevYfEcho[i] = NAN;
         prevXEcho[i] = -1;
       }
+
+      // Helper to draw one overlay given multiplier and prevY reference
+      auto drawOverlay = [&](int x, float yValue, float &prevY) {
+        if (useSmoothing) {
+          if (!isfinite(prevY)) prevY = yValue;
+          float smoothY = (smoothingAlpha * yValue) + ((1.0f - smoothingAlpha) * prevY);
+          int yPrev = constrain(static_cast<int>(round(prevY)), 0, kScreenHeight - 1);
+          int yCur  = constrain(static_cast<int>(round(smoothY)), 0, kScreenHeight - 1);
+          if (x == 0) {
+            display->drawPixel(x, yCur);
+          } else {
+            display->drawLine(x - 1, yPrev, x, yCur);
+          }
+          prevY = smoothY;
+        } else {
+          int y = constrain(static_cast<int>(round(yValue)), 0, kScreenHeight - 1);
+          if (!isfinite(prevY)) {
+            display->drawPixel(x, y);
+          } else {
+            display->drawLine(x - 1, static_cast<int>(round(prevY)), x, y);
+          }
+          prevY = static_cast<float>(y);
+        }
+      };
 
       for (int x = 0; x < kScreenWidth; ++x) {
         float samplePos = startIndex + x * step;
@@ -109,120 +141,19 @@ class ScopeDisplayU8g2 {
         float sampleNext = static_cast<float>(waveformBuffer[nextIdx]);
         float val = sampleCenter * (1.0f - frac) + sampleNext * frac;
 
-  // Compute base amplitude once and reuse for overlays (1.0, 2/3, 1/3)
-  float baseAmp = (val * ((kScreenHeight / 2) * vertScale) / 32768.0f);
-  float yf = scopeCenter - baseAmp;
-  float yfTwoThird = scopeCenter - (baseAmp * (2.0f/3.0f));
-  float yfThird = scopeCenter - (baseAmp * (1.0f/3.0f));
+        // base amplitude once
+        float baseAmp = (val * ((kScreenHeight / 2) * vertScale) / 32768.0f);
 
-        if (useSmoothing) {
-          if (!isfinite(prevYf)) prevYf = yf;
-          float smoothY = (smoothingAlpha * yf) + ((1.0f - smoothingAlpha) * prevYf);
-          int yPrev = constrain(static_cast<int>(round(prevYf)), 0, kScreenHeight - 1);
-          int yCur  = constrain(static_cast<int>(round(smoothY)), 0, kScreenHeight - 1);
-          if (x == 0) {
-            display->drawPixel(x, yCur);
-          } else {
-            display->drawLine(x - 1, yPrev, x, yCur);
-          }
-          prevYf = smoothY;
-        } else {
-          int y = constrain(static_cast<int>(round(yf)), 0, kScreenHeight - 1);
-          if (!isfinite(prevYf)) {
-            display->drawPixel(x, y);
-          } else {
-            display->drawLine(x - 1, static_cast<int>(round(prevYf)), x, y);
-          }
-          prevYf = static_cast<float>(y);
-        }
-
-        // Draw visual echoes (shifted copies) based on delayMs & delayFeedback.
-        // We compute a pixel offset from delay (ms) -> samples -> pixels, then draw
-        // a small pixel for each echo copy to keep it subtle.
-        if (delayMs > 0.5f && delayFeedback > 0.01f && displayedSamples > 0 && delaySampleRate > 0) {
-          int nCopies = static_cast<int>(std::ceil(delayFeedback * static_cast<float>(MAX_ECHO_COPIES)));
-          nCopies = std::min(std::max(nCopies, 1), MAX_ECHO_COPIES);
-          float delaySamples = (delayMs / 1000.0f) * static_cast<float>(delaySampleRate);
-          float pxPerSample = static_cast<float>(kScreenWidth) / static_cast<float>(displayedSamples);
-          float offsetPx = delaySamples * pxPerSample;
-          if (offsetPx < 1.0f) offsetPx = 1.0f;
-
-          for (int c = 1; c <= nCopies; ++c) {
-            float txf = static_cast<float>(x) + static_cast<float>(c) * offsetPx;
-            int tx = static_cast<int>(roundf(txf));
-            if (tx < 0 || tx >= kScreenWidth) continue;
-
-            float decay = 1.0f - (static_cast<float>(c) / static_cast<float>(nCopies + 1));
-            float echoY = scopeCenter - (baseAmp * decay);
-            float smoothEchoY = echoY;
-            if (useSmoothing) {
-              if (!isfinite(prevYfEcho[c - 1])) prevYfEcho[c - 1] = echoY;
-              smoothEchoY = (smoothingAlpha * echoY) + ((1.0f - smoothingAlpha) * prevYfEcho[c - 1]);
-            }
-            int yEcho = constrain(static_cast<int>(round(smoothEchoY)), 0, kScreenHeight - 1);
-            if (prevXEcho[c - 1] >= 0) {
-              int yPrev = constrain(static_cast<int>(round(prevYfEcho[c - 1])), 0, kScreenHeight - 1);
-              display->drawLine(prevXEcho[c - 1], yPrev, tx, yEcho);
-            } else {
-              display->drawPixel(tx, yEcho);
-            }
-            const int echoHalfHeight = 5;
-            int echoTop = constrain(yEcho - echoHalfHeight, 0, kScreenHeight - 1);
-            int echoBottom = constrain(yEcho + echoHalfHeight - 1, 0, kScreenHeight - 1);
-            display->drawLine(tx, echoTop, tx, echoBottom);
-            prevXEcho[c - 1] = tx;
-            prevYfEcho[c - 1] = smoothEchoY;
-          }
-        }
-
-        // Draw the 2/3-amplitude overlay
-        if (useSmoothing) {
-          if (!isfinite(prevYfTwoThird)) prevYfTwoThird = yfTwoThird;
-          float smoothYTwoThird = (smoothingAlpha * yfTwoThird) + ((1.0f - smoothingAlpha) * prevYfTwoThird);
-          int yPrevTwoThird = constrain(static_cast<int>(round(prevYfTwoThird)), 0, kScreenHeight - 1);
-          int yCurTwoThird  = constrain(static_cast<int>(round(smoothYTwoThird)), 0, kScreenHeight - 1);
-          if (x == 0) {
-            display->drawPixel(x, yCurTwoThird);
-          } else {
-            display->drawLine(x - 1, yPrevTwoThird, x, yCurTwoThird);
-          }
-          prevYfTwoThird = smoothYTwoThird;
-        } else {
-          int yTwoThird = constrain(static_cast<int>(round(yfTwoThird)), 0, kScreenHeight - 1);
-          if (!isfinite(prevYfTwoThird)) {
-            display->drawPixel(x, yTwoThird);
-          } else {
-            display->drawLine(x - 1, static_cast<int>(round(prevYfTwoThird)), x, yTwoThird);
-          }
-          prevYfTwoThird = static_cast<float>(yTwoThird);
-        }
-
-        // Draw the 1/3-amplitude overlay (a bit subtler)
-        if (useSmoothing) {
-          if (!isfinite(prevYfThird)) prevYfThird = yfThird;
-          float smoothYThird = (smoothingAlpha * yfThird) + ((1.0f - smoothingAlpha) * prevYfThird);
-          int yPrevThird = constrain(static_cast<int>(round(prevYfThird)), 0, kScreenHeight - 1);
-          int yCurThird  = constrain(static_cast<int>(round(smoothYThird)), 0, kScreenHeight - 1);
-          if (x == 0) {
-            display->drawPixel(x, yCurThird);
-          } else {
-            display->drawLine(x - 1, yPrevThird, x, yCurThird);
-          }
-          prevYfThird = smoothYThird;
-        } else {
-          int yThird = constrain(static_cast<int>(round(yfThird)), 0, kScreenHeight - 1);
-          if (!isfinite(prevYfThird)) {
-            display->drawPixel(x, yThird);
-          } else {
-            display->drawLine(x - 1, static_cast<int>(round(prevYfThird)), x, yThird);
-          }
-          prevYfThird = static_cast<float>(yThird);
+        // Draw each overlay using its multiplier
+        for (int o = 0; o < kNumOverlays; ++o) {
+          float yf = scopeCenter - (baseAmp * overlayMultipliers[o]);
+          drawOverlay(x, yf, prevYs[o]);
         }
       }
 
-      lastDisplayY = prevYf;
+      // keep compatibility: store last shown main overlay (first overlay = full)
+      lastDisplayY = prevYs[0];
     }
-
   
   public:
     // Allow external control of horizontal zoom and vertical scale so UI
@@ -230,11 +161,8 @@ class ScopeDisplayU8g2 {
     void setHorizZoom(float hz) { horizZoom = hz; }
     void setVertScale(float vs) { vertScale = vs; }
     // Set delay parameters used for echo visualization (delay in ms, feedback 0..1)
-    void setDelayParams(float ms, float feedback) {
-      delayMs = ms;
-      delayFeedback = feedback;
-    }
-    void setDelaySampleRate(int32_t sr) { delaySampleRate = sr > 0 ? sr : 44100; }
+
+
     void setSuspended(bool value) {
       suspended = value;
       if (!value) {
@@ -288,4 +216,4 @@ class ScopeDisplayU8g2 {
     }
 };
 
-#endif  
+#endif
