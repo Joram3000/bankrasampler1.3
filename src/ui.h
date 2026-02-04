@@ -28,7 +28,3 @@ void setScopeHorizZoom(float z);
 // Temporarily pause/resume the scope task when drawing custom overlays.
 void setScopeDisplaySuspended(bool suspended);
 
-// Provide scope delay visualization helpers so other modules can feed
-// delay duration (ms) and feedback (0..1) into the scope renderer.
-void setScopeDelayParams(float delayMs, float feedback);
-void setScopeDelaySampleRate(int32_t sampleRate);
