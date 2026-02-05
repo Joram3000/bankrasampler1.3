@@ -8,12 +8,9 @@
 #include <cmath>
 #include <vector>
 
-// Mixer/routing:
-// player -> filter -> split
-//   1) dry direct naar output
-//   2) send naar delay -> wet return -> mix -> output
-// Daarnaast kan er ook na het stoppen nog tail uit de delay komen via
-// renderTailFrames().
+// mixer routing: 
+//player: input -> filter -> split (dry + send to delay) -> mix (dry + wet) -> output
+
 class FilteredDelayMixerStream : public ModifyingStream {
 public:
     FilteredDelayMixerStream() = default;
@@ -77,45 +74,10 @@ public:
 
             float mixed = dryLevel * filtered + wetLevel * static_cast<float>(wet);
             temp16[i] = clamp16(mixed);
-            updateTailEnergy(static_cast<float>(wet));
         }
 
         size_t bytes = samples * sizeof(int16_t);
         return p_out->write(reinterpret_cast<const uint8_t *>(temp16.data()), bytes);
-    }
-
-    // Render alleen de tail van de delay (bijv. aanroepen wanneer de player geen
-    // data meer stuurt). Returned aantal bytes dat geschreven is.
-    size_t renderTailFrames(size_t frames = 128) {
-        if (!p_out || !delay || frameBytes == 0) return 0;
-        if (!tailActive()) return 0;
-
-        const size_t samples = frames * static_cast<size_t>(channels);
-        temp16.resize(samples);
-
-        for (size_t i = 0; i < samples; ++i) {
-            effect_t wet = delay->process(0); // 0-input; alleen buffer/tail
-            float mixed = wetLevel * static_cast<float>(wet);
-            temp16[i] = clamp16(mixed);
-            updateTailEnergy(static_cast<float>(wet));
-        }
-
-        size_t bytes = samples * sizeof(int16_t);
-        return p_out->write(reinterpret_cast<const uint8_t *>(temp16.data()), bytes);
-    }
-
-    bool tailActive() const { return tailEnergy > tailThreshold; }
-
-    void flush() override {
-        // Probeer de tail nog even uit te schrijven maar voorkom lange blokkeertijd
-        const size_t maxBatches = 4;
-        size_t batches = 0;
-        while (tailActive() && batches < maxBatches) {
-            renderTailFrames(64);
-            batches++;
-            tailEnergy *= tailHold; // extra demping om af te kappen
-        }
-        if (p_out) p_out->flush();
     }
 
 private:
@@ -124,7 +86,7 @@ private:
 
     float dryLevel = 1.0f;
     float sendLevel = 1.0f;
-    float wetLevel = 0.7f;
+    float wetLevel = 0.8f;
 
     AudioInfo audioInfo{44100, 2, 16};
     int sampleBytes = 2;
@@ -136,9 +98,6 @@ private:
 
     std::vector<int16_t> temp16;
 
-    float tailEnergy = 0.0f;
-    const float tailHold = 0.9995f;     // hoe snel de tail-meter zakt
-    const float tailThreshold = 0.5f;   // grens voor tailActive()
 
     static float clamp01(float v) {
         if (v < 0.0f) return 0.0f;
@@ -152,8 +111,4 @@ private:
         return static_cast<int16_t>(v);
     }
 
-    void updateTailEnergy(float sample) {
-        float absSample = fabsf(sample);
-        tailEnergy = std::max(absSample, tailEnergy * tailHold);
-    }
 };

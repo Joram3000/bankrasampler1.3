@@ -16,6 +16,7 @@
 #include "input/mux.h"
 #include "config/screen.h"
 #include "config/config.h"
+#include "config/settings.h"
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
 #include "InitializationScreenU8g2.h"
 #endif
@@ -36,11 +37,9 @@ static FilteredDelayMixerStream mixer;
 int currentSample = -1;
 static uint32_t lastVolSample = 0;
 static float lastVol = -1.0f;
-static int copiedZeroCount = 0;
 
 // UI Screens
 static InitializationScreenU8g2* initializationScreen = nullptr;
-
 
 // --- Buttons ---
 Button buttons[BUTTON_COUNT] = {
@@ -54,6 +53,7 @@ Button buttons[BUTTON_COUNT] = {
 
 static bool prevLatched[BUTTON_COUNT] = { false, false, false, false, false, false };
 
+// Forward declarations ?
 void playSample(int index);
 void stopSample(int index);
 
@@ -90,7 +90,7 @@ void playSample(int index) {
   if (index < 0 || index >= BUTTON_COUNT) return;
   // If same sample already active, restart it
   currentSample = index;
-  player.stop();
+  
   player.setPath(SAMPLE_PATHS[index]);
   player.setActive(true);
   // String full = String(SAMPLE_PATHS[index]);
@@ -104,7 +104,9 @@ void playSample(int index) {
 void stopSample(int index) {
   if (index < 0 || index >= BUTTON_COUNT) return;
   if (currentSample != index) return;
-  player.stop();
+  
+  player.setActive(false);
+
   currentSample = -1;
   if (DEBUGMODE) {
     Serial.print(F("STOP: "));
@@ -116,11 +118,11 @@ void initPlayer() {
   player.setVolume(1.0);
   player.setOutput(mixer);
   player.setAutoNext(false);
-  player.setSilenceOnInactive(true); // doet dit iets? When enabled, writes zeros while inactive to keep sinks alive
-  player.setDelayIfOutputFull(5); // Sets delay (ms) to wait when output is ful
+  player.setSilenceOnInactive(true);
   player.setFadeTime(BUTTON_FADE_MS);
   player.begin();
-  player.stop();
+  player.setActive(false);
+
   
 }
 
@@ -138,19 +140,17 @@ void initAudio() {
     scopeI2s.setAudioInfo(info);
   }
 
-  filterEffect.begin(4520, info.sample_rate, 0.5f);
+  // de Q zou ook uit de config moeten komen :S
+  filterEffect.begin(LOW_PASS_CUTOFF_HZ, info.sample_rate, 0.5f);
 
   delayEffect.setSampleRate(info.sample_rate);
-  delayEffect.setFeedback(0.8f); 
-  delayEffect.setDepth(0.9f); 
-  delayEffect.setDuration(300);
+  delayEffect.setFeedback(DEFAULT_DELAY_FEEDBACK); 
+  delayEffect.setDepth(DEFAULT_DELAY_DEPTH); 
+  delayEffect.setDuration(DEFAULT_DELAY_TIME_MS);
   delayEffect.setActive(true);
+  
+mixer.begin(scopeI2s, filterEffect, delayEffect, info);
 
-  mixer.setAudioInfo(info);
-  mixer.setOutput(scopeI2s);
-  mixer.setFilter(filterEffect);
-  mixer.setDelay(delayEffect);
-  mixer.setMix(1.0f, 0.9f);
 
   if(DEBUGMODE) {
     Serial.println("Audio initialized.");
@@ -173,24 +173,6 @@ void initDisplay() {
   } else if (DEBUGMODE) {
     Serial.println("Display initialized.");
   }
-
-
-    // Show a short initialization screen animation (1s) instead of a blind delay.
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-    if (auto* display = getU8g2Display()) {
-      if (!initializationScreen) {
-        initializationScreen = new InitializationScreenU8g2(*display, INIT_SCREEN_MESSAGE, INIT_SCREEN_DURATION_MS);
-        initializationScreen->begin();
-      }
-      // ensure the screen shows for the configured duration
-      initializationScreen->enter();
-      initializationScreen->update();
-    }
-#else
-    delay(1000);
-#endif
-  Serial.print("Init done, switching to Performance mode");
-    setOperatingMode(OperatingMode::Performance);
   }
   
 static void releaseAllButtons() {
@@ -219,11 +201,11 @@ if ((now - lastVolSample) >= POT_READ_INTERVAL_MS) {
 void setup() {
   Serial.begin(115200);
   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Warning);
-
+  
+  initDisplay();
   initSd();
   initAudio();
   initPlayer();  
-  initDisplay();
   setMuxChangeCallback(onMuxChange); 
   initMuxScanner(5000);
   SettingsUiDependencies settingsDeps;
@@ -231,7 +213,6 @@ void setup() {
   settingsDeps.filterEffect = &filterEffect;
   settingsDeps.releaseButtons = releaseAllButtons;
   initSettingsUi(settingsDeps);
-
 
   initSettingsModeSwitch();
 }
@@ -242,46 +223,25 @@ void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
 
-  if (copied == 0) {
-      // Als er geen nieuwe data binnenkomt, toch de delay-tail blijven
-      // uitsturen zodat de reverb hoorbaar blijft.
-     mixer.renderTailFrames(64);
-    }
-    
-    if (!mixer.tailActive()) {
-      scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
-    }
-    
-    // End-of-sample handling: if we observe no copied bytes for a few
-    // consecutive loops, consider the sample finished and stop the player.
-    // Some player backends may still report isActive() == true briefly even
-    // when no data is copied (fade/drain), so rely on a short zero-counter
-    // to avoid missed ends.
-    if (copied == 0) {
-      ++copiedZeroCount;
-    } else {
-      copiedZeroCount = 0;
-    }
-    
-    if (currentSample >= 0 && copied == 0 && (copiedZeroCount >= COPIED_ZERO_THRESHOLD || !player.isActive())) {
-      if (DEBUGMODE) {
-        Serial.print(F("END: "));
-        Serial.println(SAMPLE_PATHS[currentSample]);
-      }
-      // Ensure the player is stopped; silence-on-inactive handles zero output.
-      //  player.stop();
+
+  // check of sample klaar is
+  // copied == 0 betekent dat er geen data meer is om te kopieren (einde sample)
+  // en dat de player dus klaar is met afspelen
+  // we controleren ook of er een sample actief is (currentSample >= 0)
+    if (currentSample >= 0 && player.isActive() && copied == 0) {
+      int idx = currentSample;               
       player.setActive(false);
       currentSample = -1;
-      copiedZeroCount = 0;
+      if (DEBUGMODE) {
+        Serial.print(F("SAMPLE END: "));
+        Serial.println(SAMPLE_PATHS[idx]);
+      }
     }
     
-    
   checkPot(now); 
-  
   muxScanTick();
   checkSettingsMode(now);
   
-
   if (getOperatingMode() == OperatingMode::Settings) {
     updateSettingsScreenUi();
   }
