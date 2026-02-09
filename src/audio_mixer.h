@@ -3,27 +3,19 @@
 #include <Arduino.h>
 #include <AudioTools.h>
 #include "AudioTools/CoreAudio/AudioEffects/AudioEffect.h"
-#include "AudioTools/CoreAudio/AudioFilter/Filter.h"
 #include <AudioTools/AudioLibs/AudioEffectsSuite.h>
 #include <cmath>
 #include <vector>
 
-// mixer routing: 
-//player: input -> filter -> split (dry + send to delay) -> mix (dry + wet) -> output
-
-class FilteredDelayMixerStream : public ModifyingStream {
+class DelayMixerStream : public ModifyingStream {
 public:
-    FilteredDelayMixerStream() = default;
+    DelayMixerStream() = default;
 
-    // Snelle helper om alles in één keer te koppelen.
-    void begin(Print &out, LowPassFilter<float> &filterRef, Delay &delayRef, AudioInfo info) {
+    void begin(Print &out, Delay &delayRef, AudioInfo info) {
         setAudioInfo(info);
         setOutput(out);
-        setFilter(filterRef);
         setDelay(delayRef);
     }
-
-    void setFilter(LowPassFilter<float> &f) { filter = &f; }
 
     void setDelay(Delay &d) {
         delay = &d;
@@ -36,7 +28,7 @@ public:
         setMix(dry, wet, wet); // backward compatible: send = wet
     }
 
-    void setMix(float dry, float send, float wet) {
+       void setMix(float dry, float send, float wet) {
         dryLevel = clamp01(dry);
         sendLevel = clamp01(send);
         wetLevel = clamp01(wet);
@@ -57,7 +49,7 @@ public:
 
     // Core processing: filter -> split (dry + send to delay) -> mix -> output
     size_t write(const uint8_t *data, size_t len) override {
-        if (!p_out || !filter || !delay) return 0;
+        if (!p_out || !delay) return 0;
         if (sampleBytes != 2 || len == 0) return 0; // only PCM16
 
         const size_t samples = len / sizeof(int16_t);
@@ -66,13 +58,12 @@ public:
 
         for (size_t i = 0; i < samples; ++i) {
             float x = static_cast<float>(in[i]);
-            float filtered = filter->process(x);              // filter vóór split
-
+       
             // Send naar delay: clamp naar int16 omdat Delay int16 verwacht
-            int16_t sendSample = clamp16(sendLevel * filtered);
+            int16_t sendSample = clamp16(sendLevel * x);
             effect_t wet = delay->process(sendSample);
 
-            float mixed = dryLevel * filtered + wetLevel * static_cast<float>(wet);
+            float mixed = dryLevel * x + wetLevel * static_cast<float>(wet);
             temp16[i] = clamp16(mixed);
         }
 
@@ -81,7 +72,6 @@ public:
     }
 
 private:
-    LowPassFilter<float> *filter = nullptr;
     Delay *delay = nullptr;
 
     float dryLevel = 1.0f;

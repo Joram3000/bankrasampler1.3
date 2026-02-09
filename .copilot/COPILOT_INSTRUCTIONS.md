@@ -4,7 +4,7 @@
 
 Ontwikkel een **sound sample player** op een **ESP32** met 6 drukknoppen + 2 switches op een multiplexer, een **I2S DAC (UDA1334A)**, en een **SD-kaartmodule**.  
 Bij indrukken van een knop speelt de bijbehorende sample af, en bij loslaten stopt deze onmiddellijk.  
-Systeem moet **polyfoon** zijn en **minimale latency** hebben.
+Systeem mag **polyfoon** zijn en **minimale latency** hebben.
 
 ---
 
@@ -45,7 +45,7 @@ Toon iets op het scherm zodat we weten dat het allemaal gelukt is
 
 Knoppen:
 
-Gebruik 6 digitale inputs via de muxer.
+Gebruik 6 digitale inputs via de muxer voor de drukknoppen
 
 Detecteer pressed (LOW) en released (HIGH) events.
 
@@ -73,10 +73,33 @@ Gebruik AudioPlayer of AudioGeneratorWAV uit AudioTools.
 Copilot moet code genereren die:
 
 Een robuuste AudioPlayer setup maakt met I2SStream.
+die de conventies volgt van audio-tools van phil schatzman
 
 loop() gebruikt om knoppen te scannen en play/stop aan te roepen.
 
 playSample(int index) en stopSample(int index) implementeert.
+
+zoveel mogelijk audio-tools classes gebruikt in plaats van zelf code schrijven.
+
+de routing moet zijn:
+
+player
+
+filter
+
+geluid splitsen van dry en send naar delay
+
+geluid mergen zodat je dry en de (wet) delay effect hebt
+
+dat naar de output doen,
+en die waveform tonen op de schermpje.
+
+de stream / sink of hoe dat ook heet moet altijd aan staan, zodat de delay tail (als de delay door blijft klinken)  hoorbaar blijft in plaats van dat die afgekapt wordt op button release.
+Dus dat die mooi uit blijft klinken.
+
+
+
+ik wil de interactive audio
 
 Foutmeldingen logt via Serial.
 
@@ -84,8 +107,6 @@ Foutmeldingen logt via Serial.
 
 Later uitbreiden met:
 
-VU-meter of waveform op OLED.
-
-
 effecten aan en uit zetten en bewerken
+en realtime kunnen bewerken
 ```

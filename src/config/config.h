@@ -27,7 +27,7 @@ const int COPIED_ZERO_THRESHOLD = 3; // number of consecutive loops with copied=
 static const size_t kScopeSilenceFramesPerLoop = 128; // number of silence frames to feed per loop when no audio
   
 #define POT_POLARITY_INVERTED 1
-constexpr uint32_t POT_READ_INTERVAL_MS = 50;
+constexpr uint32_t POT_READ_INTERVAL_MS = 25;
 static const uint32_t SETTINGS_POLL_INTERVAL_MS = 150;
 static const uint32_t SETTINGS_DEBOUNCE_MS = 50;
 constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 5;

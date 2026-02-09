@@ -17,6 +17,7 @@
 #include "config/screen.h"
 #include "config/config.h"
 #include "config/settings.h"
+
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
 #include "InitializationScreenU8g2.h"
 #endif
@@ -28,20 +29,13 @@ AudioSourceSD source("/", "wav");
 WAVDecoder decoder;
 
 
-FilteredStream<int16_t, float> filteredStream(scopeI2s,2); 
-AudioPlayer player(source, filteredStream, decoder);
-// we maken een filtered scream die het geluid nadat het door player is gegaan kan bewerken
-
-
-
-// ===== Effects =====
+DelayMixerStream mixer;
+FilteredStream<int16_t, float> filteredStream(mixer,2); 
+AudioPlayer player(source, filteredStream, decoder);// ===== Effects =====
 static LowPassFilter<float> insertLowPassFilterL;
 static LowPassFilter<float> insertLowPassFilterR;
 
-// static Delay sendDelayEffectL;
-// static Delay sendDelayEffectR;
-// static LowPassFilter<float> filterEffect;
-// static FilteredDelayMixerStream mixer;
+static Delay delayEffect;
 
 // State
 int currentSample = -1;
@@ -153,8 +147,7 @@ void initAudio() {
   config.pin_ws   = I2S_PIN_WS;
   config.pin_data = I2S_PIN_DATA;
   config.i2s_format = I2S_STD_FORMAT; 
-  // config.buffer_size = 512; 
-  // config.buffer_count = 4; // we hebben een grotere buffer nodig omdat we soms niet op tijd kunnen leveren (door effecten of door SD card read vertragingen)
+  
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
   } else {
@@ -165,17 +158,15 @@ void initAudio() {
   filteredStream.setFilter(0, &insertLowPassFilterL);
   filteredStream.setFilter(1, &insertLowPassFilterR);
 
-  // // de Q zou ook uit de config moeten komen :S
-  // filterEffect.begin(LOW_PASS_CUTOFF_HZ, info.sample_rate, 0.5f);
 
-  // delayEffect.setSampleRate(info.sample_rate);
-  // delayEffect.setFeedback(DEFAULT_DELAY_FEEDBACK); 
-  // delayEffect.setDepth(DEFAULT_DELAY_DEPTH); 
-  // delayEffect.setDuration(DEFAULT_DELAY_TIME_MS);
-  // delayEffect.setActive(true);
+  delayEffect.setSampleRate(info.sample_rate);
+  delayEffect.setFeedback(DEFAULT_DELAY_FEEDBACK); 
+  delayEffect.setDepth(DEFAULT_DELAY_DEPTH); 
+  delayEffect.setDuration(DEFAULT_DELAY_TIME_MS);
+  delayEffect.setActive(true);
   
 
-// mixer.begin(scopeI2s, filterEffect, delayEffect, info);
+ mixer.begin(scopeI2s, delayEffect, info);
 
 
   if(DEBUGMODE) {
