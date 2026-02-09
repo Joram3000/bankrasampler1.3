@@ -23,10 +23,6 @@ public:
         if (audioInfo.sample_rate > 0) delay->setSampleRate(audioInfo.sample_rate);
     }
 
-    // dry = direct, send = hoeveel de delay in gaat, wet = terugkomend niveau
-    void setMix(float dry, float wet) {
-        setMix(dry, wet, wet); // backward compatible: send = wet
-    }
 
        void setMix(float dry, float send, float wet) {
         dryLevel = clamp01(dry);
@@ -46,6 +42,20 @@ public:
     void setStream(Stream &in) override { p_in = &in; }
 
     void setOutput(Print &out) override { p_out = &out; }
+
+  // When there is no active source we can pump silence through the mixer to
+  // advance internal effects (e.g., delay buffer) so tails continue to decay.
+  // frames: number of audio frames (samples per channel) to push.
+  void pumpSilenceFrames(size_t frames) {
+    if (frames == 0) return;
+    size_t sampleCount = frames * std::max<int>(1, channels);
+    size_t byteCount = sampleCount * static_cast<size_t>(sampleBytes);
+    // allocate a temporary zero buffer on the heap to avoid stack pressure
+    std::vector<uint8_t> zeros(byteCount);
+    // write will call the CallbackStream which will call our updateCallback
+    // and thus call delay->process(0) for each frame.
+    write(zeros.data(), byteCount);
+  }
 
     // Core processing: filter -> split (dry + send to delay) -> mix -> output
     size_t write(const uint8_t *data, size_t len) override {

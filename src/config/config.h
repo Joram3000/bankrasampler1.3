@@ -24,7 +24,7 @@ constexpr uint32_t BUTTON_DEBOUNCE_MS = 4;
 constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 10;
 
 const int COPIED_ZERO_THRESHOLD = 3; // number of consecutive loops with copied==0
-static const size_t kScopeSilenceFramesPerLoop = 128; // number of silence frames to feed per loop when no audio
+static const size_t kScopeSilenceFramesPerLoop = 64; // number of silence frames to feed per loop when no audio
   
 #define POT_POLARITY_INVERTED 1
 constexpr uint32_t POT_READ_INTERVAL_MS = 25;

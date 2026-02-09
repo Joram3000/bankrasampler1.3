@@ -3,18 +3,12 @@
 #include <Wire.h>
 #include <AudioTools.h>
 #include "AudioTools/Disk/AudioSourceSD.h"
-#include "AudioTools/AudioCodecs/CodecWAV.h"
-#include <ScopeI2SStream.h>
-#include <algorithm>
-#include "AudioTools/CoreAudio/AudioEffects/AudioEffects.h"
 #include "audio_mixer.h"
-#include "config.h"
 #include "input/button.h"
 #include "ui.h"
 #include "settings_storage.h"
 #include "settings_mode.h"
 #include "input/mux.h"
-#include "config/screen.h"
 #include "config/config.h"
 #include "config/settings.h"
 
@@ -31,10 +25,9 @@ WAVDecoder decoder;
 
 DelayMixerStream mixer;
 FilteredStream<int16_t, float> filteredStream(mixer,2); 
-AudioPlayer player(source, filteredStream, decoder);// ===== Effects =====
+AudioPlayer player(source, filteredStream, decoder);
 static LowPassFilter<float> insertLowPassFilterL;
 static LowPassFilter<float> insertLowPassFilterR;
-
 static Delay delayEffect;
 
 // State
@@ -127,9 +120,7 @@ void stopSample(int index) {
 
 void initPlayer() {
   player.setVolume(1.0);
-  // bepaal hier wat de output van the player is: in dit geval direct naar de i2s, maar we zouden ook een effect kunnen toevoegen in de chain
   player.setOutput(filteredStream);
-  // player.setOutput(mixer);
   player.setAutoNext(false);
   // player.setVolumeControl(0.3f);  // hier zouden we dus onze eigen curve kunnen laten 
   player.setSilenceOnInactive(true);
@@ -221,9 +212,6 @@ float normalized = constrain(raw, 0, 4095) / 4095.0f;
 // Map naar gewenste Hz range met float precisie
 filterCutoff = 200.0f + (normalized * 3300.0f); // 200 + (0..1 * 3300) = 200..3500
 
-
-
-  
 //   lastVolSample = now;
 //     int raw = analogRead(POT_PIN);
 //     float norm = static_cast<float>(raw) / 4095.0f;
@@ -250,11 +238,11 @@ void setup() {
   initPlayer();  
   setMuxChangeCallback(onMuxChange); 
   initMuxScanner(5000);
-  // SettingsUiDependencies settingsDeps;
-  // settingsDeps.delayEffect = &delayEffect;
-  // settingsDeps.filterEffect = &filterEffect;
-  // settingsDeps.releaseButtons = releaseAllButtons;
-  // initSettingsUi(settingsDeps);
+  SettingsUiDependencies settingsDeps;
+  settingsDeps.delayEffect = &delayEffect;
+  settingsDeps.filterEffect = &insertLowPassFilterL; // we sturen alleen de linker filter mee, want die is gelijk aan de rechter
+  settingsDeps.releaseButtons = releaseAllButtons;
+  initSettingsUi(settingsDeps);
 
   initSettingsModeSwitch();
 }
@@ -265,7 +253,15 @@ void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
 
-
+    // if (!player.isActive()) {
+    //     // kScopeSilenceFramesPerLoop is gedefinieerd in src/config/config.h
+    //    
+    // }
+    if (!player.isActive()) {
+      // scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
+      mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
+    }
+    
   // check of sample klaar is
   // copied == 0 betekent dat er geen data meer is om te kopieren (einde sample)
   // en dat de player dus klaar is met afspelen
