@@ -26,17 +26,34 @@ AudioInfo info(44100, 2, 16);
 // ===== Single audio player =====
 AudioSourceSD source("/", "wav");
 WAVDecoder decoder;
-AudioPlayer player(source, scopeI2s, decoder);
+
+
+FilteredStream<int16_t, float> filteredStream(scopeI2s,2); 
+AudioPlayer player(source, filteredStream, decoder);
+// we maken een filtered scream die het geluid nadat het door player is gegaan kan bewerken
+
+
 
 // ===== Effects =====
-static LowPassFilter<float> filterEffect;
-static Delay delayEffect;
-static FilteredDelayMixerStream mixer;
+static LowPassFilter<float> insertLowPassFilterL;
+static LowPassFilter<float> insertLowPassFilterR;
+
+// static Delay sendDelayEffectL;
+// static Delay sendDelayEffectR;
+// static LowPassFilter<float> filterEffect;
+// static FilteredDelayMixerStream mixer;
 
 // State
 int currentSample = -1;
 static uint32_t lastVolSample = 0;
 static float lastVol = -1.0f;
+
+// filtercutof
+static float filterCutoff = 800.0f;
+float smoothedCutoff = 1000.0f;
+
+
+
 
 // UI Screens
 static InitializationScreenU8g2* initializationScreen = nullptr;
@@ -116,8 +133,11 @@ void stopSample(int index) {
 
 void initPlayer() {
   player.setVolume(1.0);
-  player.setOutput(mixer);
+  // bepaal hier wat de output van the player is: in dit geval direct naar de i2s, maar we zouden ook een effect kunnen toevoegen in de chain
+  player.setOutput(filteredStream);
+  // player.setOutput(mixer);
   player.setAutoNext(false);
+  // player.setVolumeControl(0.3f);  // hier zouden we dus onze eigen curve kunnen laten 
   player.setSilenceOnInactive(true);
   player.setFadeTime(BUTTON_FADE_MS);
   player.begin();
@@ -128,28 +148,34 @@ void initPlayer() {
 
 void initAudio() {
   auto config = scopeI2s.defaultConfig(TX_MODE);
-  config.copyFrom(info);
+  config.copyFrom(info); // we moeten de sample rate, bits per sample en channels doorgeven aan de i2s driver zodat die correct kan configureren
   config.pin_bck  = I2S_PIN_BCK;
   config.pin_ws   = I2S_PIN_WS;
   config.pin_data = I2S_PIN_DATA;
-  config.i2s_format = I2S_STD_FORMAT;
-
+  config.i2s_format = I2S_STD_FORMAT; 
+  // config.buffer_size = 512; 
+  // config.buffer_count = 4; // we hebben een grotere buffer nodig omdat we soms niet op tijd kunnen leveren (door effecten of door SD card read vertragingen)
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
   } else {
     scopeI2s.setAudioInfo(info);
   }
 
-  // de Q zou ook uit de config moeten komen :S
-  filterEffect.begin(LOW_PASS_CUTOFF_HZ, info.sample_rate, 0.5f);
+  // setup filters for all available channels
+  filteredStream.setFilter(0, &insertLowPassFilterL);
+  filteredStream.setFilter(1, &insertLowPassFilterR);
 
-  delayEffect.setSampleRate(info.sample_rate);
-  delayEffect.setFeedback(DEFAULT_DELAY_FEEDBACK); 
-  delayEffect.setDepth(DEFAULT_DELAY_DEPTH); 
-  delayEffect.setDuration(DEFAULT_DELAY_TIME_MS);
-  delayEffect.setActive(true);
+  // // de Q zou ook uit de config moeten komen :S
+  // filterEffect.begin(LOW_PASS_CUTOFF_HZ, info.sample_rate, 0.5f);
+
+  // delayEffect.setSampleRate(info.sample_rate);
+  // delayEffect.setFeedback(DEFAULT_DELAY_FEEDBACK); 
+  // delayEffect.setDepth(DEFAULT_DELAY_DEPTH); 
+  // delayEffect.setDuration(DEFAULT_DELAY_TIME_MS);
+  // delayEffect.setActive(true);
   
-mixer.begin(scopeI2s, filterEffect, delayEffect, info);
+
+// mixer.begin(scopeI2s, filterEffect, delayEffect, info);
 
 
   if(DEBUGMODE) {
@@ -181,21 +207,46 @@ static void releaseAllButtons() {
   }
 }
 
+void updateCutoff(float target) {
+  smoothedCutoff += 0.05f * (target - smoothedCutoff);
+
+  insertLowPassFilterL.begin(smoothedCutoff, info.sample_rate, 0.5f);
+  insertLowPassFilterR.begin(smoothedCutoff, info.sample_rate, 0.5f);
+}
+
 void checkPot(uint32_t now) {
 if ((now - lastVolSample) >= POT_READ_INTERVAL_MS) {
-    lastVolSample = now;
-    int raw = analogRead(POT_PIN);
-    float norm = static_cast<float>(raw) / 4095.0f;
+    
+  
+  int raw = analogRead(POT_PIN);
+
 #ifdef POT_POLARITY_INVERTED
-    norm = 1.0f - norm;
+raw = 4095 - raw;
 #endif
-    norm = constrain(norm, 0.0f, 1.0f);
-    // simple deadband + smoothing
-    if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.01f) {
-      lastVol = norm;
-        player.setVolume(lastVol); // we zetten gewoon volume op de sampler
-    }
-  }
+
+// Direct naar float en normaliseren naar 0.0-1.0 voor maximale precisie
+float normalized = constrain(raw, 0, 4095) / 4095.0f;
+
+// Map naar gewenste Hz range met float precisie
+filterCutoff = 200.0f + (normalized * 3300.0f); // 200 + (0..1 * 3300) = 200..3500
+
+
+
+  
+//   lastVolSample = now;
+//     int raw = analogRead(POT_PIN);
+//     float norm = static_cast<float>(raw) / 4095.0f;
+// #ifdef POT_POLARITY_INVERTED
+//     norm = 1.0f - norm;
+// #endif
+//     norm = constrain(norm, 0.0f, 1.0f);
+//     // simple deadband + smoothing
+//     if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.01f) {
+//       lastVol = norm;
+//         player.setVolume(lastVol); // we zetten gewoon volume op de sampler
+//     }
+//   
+}
 }
 
 void setup() {
@@ -208,11 +259,11 @@ void setup() {
   initPlayer();  
   setMuxChangeCallback(onMuxChange); 
   initMuxScanner(5000);
-  SettingsUiDependencies settingsDeps;
-  settingsDeps.delayEffect = &delayEffect;
-  settingsDeps.filterEffect = &filterEffect;
-  settingsDeps.releaseButtons = releaseAllButtons;
-  initSettingsUi(settingsDeps);
+  // SettingsUiDependencies settingsDeps;
+  // settingsDeps.delayEffect = &delayEffect;
+  // settingsDeps.filterEffect = &filterEffect;
+  // settingsDeps.releaseButtons = releaseAllButtons;
+  // initSettingsUi(settingsDeps);
 
   initSettingsModeSwitch();
 }
@@ -238,7 +289,8 @@ void loop() {
       }
     }
     
-  checkPot(now); 
+  checkPot(now);
+  updateCutoff(filterCutoff); 
   muxScanTick();
   checkSettingsMode(now);
   
