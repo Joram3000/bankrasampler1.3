@@ -38,7 +38,7 @@ static bool switchDelaySendEnabled = false;
 static bool switchFilterEnabled = false;
 
 // filtercutof
-static float filterCutoff = 800.0f;
+static float filterCutoff = 800.0f; // 
 float smoothedCutoff = 1000.0f;
 
 
@@ -172,6 +172,7 @@ void initAudio() {
   config.i2s_format = I2S_STD_FORMAT; 
   config.buffer_count = 6;
   config.buffer_size = 512;
+  
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
   } else {
@@ -181,7 +182,6 @@ void initAudio() {
   // setup filters for all available channels
   filteredStream.setFilter(0, &insertLowPassFilterL);
   filteredStream.setFilter(1, &insertLowPassFilterR);
-
 
   delayEffect.setSampleRate(info.sample_rate);
   delayEffect.setFeedback(DEFAULT_DELAY_FEEDBACK); 
@@ -224,36 +224,33 @@ static void releaseAllButtons() {
 
 
 void checkPot(uint32_t now) {
-if ((now - lastVolSample) >= POT_READ_INTERVAL_MS) {
-    
-  
+  // only read pot at configured interval
+  if ((now - lastVolSample) < POT_READ_INTERVAL_MS) return;
+
   int raw = analogRead(POT_PIN);
 
 #ifdef POT_POLARITY_INVERTED
-raw = 4095 - raw;
+  raw = 4095 - raw;
 #endif
 
-// Direct naar float en normaliseren naar 0.0-1.0 voor maximale precisie
-float normalized = constrain(raw, 0, 4095) / 4095.0f;
+  // direct naar float 0.0 - 1.0
+  float norm = constrain(raw, 0, 4095) / 4095.0f;
 
-// Map naar gewenste Hz range met float precisie
-filterCutoff = 200.0f + (normalized * 3300.0f); // 200 + (0..1 * 3300) = 200..3500
+  if (switchFilterEnabled) {
+    // stuur pot naar filter cutoff (wordt verder gesmooth in updateCutoff)
+    filterCutoff = 200.0f + (norm * 3300.0f); // 200..3500 Hz
+  } else {
+    // deadband + update volume alleen als verandering > threshold
+    if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.01f) {
+      lastVol = norm;
+      player.setVolume(lastVol);
+    }
+  }
 
-//   lastVolSample = now;
-//     int raw = analogRead(POT_PIN);
-//     float norm = static_cast<float>(raw) / 4095.0f;
-// #ifdef POT_POLARITY_INVERTED
-//     norm = 1.0f - norm;
-// #endif
-//     norm = constrain(norm, 0.0f, 1.0f);
-//     // simple deadband + smoothing
-//     if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.01f) {
-//       lastVol = norm;
-//         player.setVolume(lastVol); // we zetten gewoon volume op de sampler
-//     }
-//   
+  // update timestamp alleen als we daadwerkelijk gelezen hebben
+  lastVolSample = now;
 }
-}
+
 
 void setup() {
   Serial.begin(115200);
@@ -279,11 +276,6 @@ void setup() {
 void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
-
-    // if (!player.isActive()) {
-    //     // kScopeSilenceFramesPerLoop is gedefinieerd in src/config/config.h
-    //    
-    // }
     if (!player.isActive()) {
       // scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
       mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
@@ -306,12 +298,12 @@ void loop() {
 
   checkPot(now);
   
-  switchFilterEnabled ? updateCutoff(filterCutoff) : updateCutoff(20000.0f); // bij uitgeschakeld filter cutoff naar 20kHz zodat het zo min mogelijk effect heeft
+  switchFilterEnabled ? updateCutoff(filterCutoff) : updateCutoff(20000.0f);
   switchDelaySendEnabled ? mixer.sendEnabled(true) : mixer.sendEnabled(false);
   
   muxScanTick();
+
   checkSettingsMode(now);
-  
   if (getOperatingMode() == OperatingMode::Settings) {
     updateSettingsScreenUi();
   }

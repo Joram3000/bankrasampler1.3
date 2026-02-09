@@ -29,13 +29,13 @@ class ScopeI2SStream : public I2SStream {
      * @param displayMutex Pointer naar mutex voor thread-safe access
      * @param downsample Neem 1 van elke N samples (default: 16)
      */
-    ScopeI2SStream(int16_t* buffer, int* index, SemaphoreHandle_t* displayMutex, int downsample = 1) 
+    ScopeI2SStream(int16_t* buffer, int* index, SemaphoreHandle_t* displayMutex, int downsample = 4) 
       : waveformBuffer(buffer), 
         waveformIndex(index), 
         mutex(displayMutex),
         downsampleRate(downsample) {
     }
-
+    
     void setAudioInfo(AudioInfo info) override {
   sampleBytes = std::max<int>(1, info.bits_per_sample / 8);
   channelCount = std::max<int>(1, info.channels);
