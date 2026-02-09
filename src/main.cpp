@@ -34,6 +34,8 @@ static Delay delayEffect;
 int currentSample = -1;
 static uint32_t lastVolSample = 0;
 static float lastVol = -1.0f;
+static bool switchDelaySendEnabled = false;
+static bool switchFilterEnabled = false;
 
 // filtercutof
 static float filterCutoff = 800.0f;
@@ -70,8 +72,36 @@ static int findButtonIndexForChannel(uint8_t channel) {
   return -1;
 }
 
-// this is where the buttons are mapped to settings screen actions
+
+void updateCutoff(float target) {
+  smoothedCutoff += 0.05f * (target - smoothedCutoff);
+
+  insertLowPassFilterL.begin(smoothedCutoff, info.sample_rate, 0.5f);
+  insertLowPassFilterR.begin(smoothedCutoff, info.sample_rate, 0.5f);
+}
+
+// This is called whenever a change on the mux is detected (button press/release or switch toggle)
 static void onMuxChange(uint8_t channel, bool active) {
+ 
+  if (channel == SWITCH_CHANNEL_FILTER_ENABLE) {
+    switchFilterEnabled = active;
+  if (DEBUGMODE) {
+      Serial.print(F("SWITCH_FILTER_ENABLE = "));
+      Serial.println(active ? F("ON") : F("OFF"));
+    }
+    return;
+  }
+ 
+if(channel == SWITCH_CHANNEL_DELAY_SEND) {
+    switchDelaySendEnabled = active;
+
+  if (DEBUGMODE) {
+      Serial.print(F("SWITCH_DELAY_SEND_ENABLE = "));
+      Serial.println(active ? F("ON") : F("OFF"));
+    }
+    return;
+  }
+
   int index = findButtonIndexForChannel(channel);
   if (index < 0) return;
 
@@ -86,8 +116,9 @@ static void onMuxChange(uint8_t channel, bool active) {
   if (DEBUGMODE) {
     Serial.print(F("  MUX->CHANNEL "));
     Serial.println(channel);
-
   }
+
+  // check if it
 }
 
 void playSample(int index) {
@@ -109,9 +140,10 @@ void stopSample(int index) {
   if (index < 0 || index >= BUTTON_COUNT) return;
   if (currentSample != index) return;
   
-  player.setActive(false);
+  // player.setActive(false);
 
-  currentSample = -1;
+  // currentSample = -1;
+player.setActive(false);
   if (DEBUGMODE) {
     Serial.print(F("STOP: "));
     Serial.print(SAMPLE_PATHS[index]);    
@@ -123,7 +155,7 @@ void initPlayer() {
   player.setOutput(filteredStream);
   player.setAutoNext(false);
   // player.setVolumeControl(0.3f);  // hier zouden we dus onze eigen curve kunnen laten 
-  player.setSilenceOnInactive(true);
+  player.setSilenceOnInactive(false);
   player.setFadeTime(BUTTON_FADE_MS);
   player.begin();
   player.setActive(false);
@@ -138,7 +170,8 @@ void initAudio() {
   config.pin_ws   = I2S_PIN_WS;
   config.pin_data = I2S_PIN_DATA;
   config.i2s_format = I2S_STD_FORMAT; 
-  
+  config.buffer_count = 6;
+  config.buffer_size = 512;
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
   } else {
@@ -189,12 +222,6 @@ static void releaseAllButtons() {
   }
 }
 
-void updateCutoff(float target) {
-  smoothedCutoff += 0.05f * (target - smoothedCutoff);
-
-  insertLowPassFilterL.begin(smoothedCutoff, info.sample_rate, 0.5f);
-  insertLowPassFilterR.begin(smoothedCutoff, info.sample_rate, 0.5f);
-}
 
 void checkPot(uint32_t now) {
 if ((now - lastVolSample) >= POT_READ_INTERVAL_MS) {
@@ -230,7 +257,7 @@ filterCutoff = 200.0f + (normalized * 3300.0f); // 200 + (0..1 * 3300) = 200..35
 
 void setup() {
   Serial.begin(115200);
-  AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Warning);
+  AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
   
   initDisplay();
   initSd();
@@ -276,8 +303,12 @@ void loop() {
       }
     }
     
+
   checkPot(now);
-  updateCutoff(filterCutoff); 
+  
+  switchFilterEnabled ? updateCutoff(filterCutoff) : updateCutoff(20000.0f); // bij uitgeschakeld filter cutoff naar 20kHz zodat het zo min mogelijk effect heeft
+  switchDelaySendEnabled ? mixer.sendEnabled(true) : mixer.sendEnabled(false);
+  
   muxScanTick();
   checkSettingsMode(now);
   

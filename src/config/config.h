@@ -19,7 +19,7 @@ constexpr const char* SAMPLE_PATHS[] = {
     "/6.wav"
 };
 
-constexpr uint32_t BUTTON_FADE_MS = 10;
+constexpr uint32_t BUTTON_FADE_MS = 30;
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 4;
 constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 10;
 
@@ -28,7 +28,7 @@ static const size_t kScopeSilenceFramesPerLoop = 64; // number of silence frames
   
 #define POT_POLARITY_INVERTED 1
 constexpr uint32_t POT_READ_INTERVAL_MS = 25;
-static const uint32_t SETTINGS_POLL_INTERVAL_MS = 150;
-static const uint32_t SETTINGS_DEBOUNCE_MS = 50;
+static const uint32_t SETTINGS_POLL_INTERVAL_MS = 100;
+static const uint32_t SETTINGS_DEBOUNCE_MS = 25;
 constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 5;
 

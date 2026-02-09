@@ -24,10 +24,14 @@ public:
     }
 
 
-       void setMix(float dry, float send, float wet) {
+    void setMix(float dry, float send, float wet) {
         dryLevel = clamp01(dry);
         sendLevel = clamp01(send);
         wetLevel = clamp01(wet);
+    }
+
+void sendEnabled(bool enabled) {
+        sendLevel = enabled ? 1.0f : 0.0f;
     }
 
     void setAudioInfo(AudioInfo info) override {
