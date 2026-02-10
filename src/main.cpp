@@ -11,11 +11,9 @@
 #include "input/mux.h"
 #include "config/config.h"
 #include "config/settings.h"
+#include "initialization.h" 
 
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-#include "InitializationScreenU8g2.h"
-#endif
-
+// InitializationScreen is provided by the UI module; use the getter
 // Audio system
 AudioInfo info(44100, 2, 16);
 // ===== Single audio player =====
@@ -31,21 +29,18 @@ static LowPassFilter<float> insertLowPassFilterR;
 static Delay delayEffect;
 
 // State
+int initializationStep = 0;
 int currentSample = -1;
-static uint32_t lastVolSample = 0;
+static uint32_t lastPotRead = 0;// timestamp of last pot read
 static float lastVol = -1.0f;
 static bool switchDelaySendEnabled = false;
 static bool switchFilterEnabled = false;
 
 // filtercutof
-static float filterCutoff = 800.0f; // 
-float smoothedCutoff = 1000.0f;
-
-
-
+static float filterCutoff = LOW_PASS_CUTOFF_HZ;
+float smoothedCutoff = filterCutoff;
 
 // UI Screens
-static InitializationScreenU8g2* initializationScreen = nullptr;
 
 // --- Buttons ---
 Button buttons[BUTTON_COUNT] = {
@@ -74,7 +69,7 @@ static int findButtonIndexForChannel(uint8_t channel) {
 
 
 void updateCutoff(float target) {
-  smoothedCutoff += 0.05f * (target - smoothedCutoff);
+  smoothedCutoff += 0.1f * (target - smoothedCutoff);
 
   insertLowPassFilterL.begin(smoothedCutoff, info.sample_rate, 0.5f);
   insertLowPassFilterR.begin(smoothedCutoff, info.sample_rate, 0.5f);
@@ -82,17 +77,17 @@ void updateCutoff(float target) {
 
 // This is called whenever a change on the mux is detected (button press/release or switch toggle)
 static void onMuxChange(uint8_t channel, bool active) {
- 
-  if (channel == SWITCH_CHANNEL_FILTER_ENABLE) {
+  // if channel is one of the switches and the state has changed, update the corresponding state variable and move on
+  if (channel == SWITCH_CHANNEL_FILTER_ENABLE && active != switchFilterEnabled) {
     switchFilterEnabled = active;
-  if (DEBUGMODE) {
+    if (DEBUGMODE) {
       Serial.print(F("SWITCH_FILTER_ENABLE = "));
       Serial.println(active ? F("ON") : F("OFF"));
     }
     return;
   }
  
-if(channel == SWITCH_CHANNEL_DELAY_SEND) {
+if(channel == SWITCH_CHANNEL_DELAY_SEND && active != switchDelaySendEnabled) {
     switchDelaySendEnabled = active;
 
   if (DEBUGMODE) {
@@ -117,8 +112,6 @@ if(channel == SWITCH_CHANNEL_DELAY_SEND) {
     Serial.print(F("  MUX->CHANNEL "));
     Serial.println(channel);
   }
-
-  // check if it
 }
 
 void playSample(int index) {
@@ -140,9 +133,6 @@ void stopSample(int index) {
   if (index < 0 || index >= BUTTON_COUNT) return;
   if (currentSample != index) return;
   
-  // player.setActive(false);
-
-  // currentSample = -1;
 player.setActive(false);
   if (DEBUGMODE) {
     Serial.print(F("STOP: "));
@@ -160,26 +150,29 @@ void initPlayer() {
   player.begin();
   player.setActive(false);
 
-  
+delay(200); 
+  if(DEBUGMODE) {
+    Serial.println("player initialized.");
+  }
+
 }
 
 void initAudio() {
   auto config = scopeI2s.defaultConfig(TX_MODE);
-  config.copyFrom(info); // we moeten de sample rate, bits per sample en channels doorgeven aan de i2s driver zodat die correct kan configureren
+  config.copyFrom(info);
   config.pin_bck  = I2S_PIN_BCK;
   config.pin_ws   = I2S_PIN_WS;
   config.pin_data = I2S_PIN_DATA;
   config.i2s_format = I2S_STD_FORMAT; 
   config.buffer_count = 6;
   config.buffer_size = 512;
-  
+
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
   } else {
     scopeI2s.setAudioInfo(info);
   }
 
-  // setup filters for all available channels
   filteredStream.setFilter(0, &insertLowPassFilterL);
   filteredStream.setFilter(1, &insertLowPassFilterR);
 
@@ -189,32 +182,67 @@ void initAudio() {
   delayEffect.setDuration(DEFAULT_DELAY_TIME_MS);
   delayEffect.setActive(true);
   
-
- mixer.begin(scopeI2s, delayEffect, info);
-
-
+  mixer.begin(scopeI2s, delayEffect, info);
+  initializationStep++;
+  delay(200); 
   if(DEBUGMODE) {
+     Serial.print(initializationStep );
     Serial.println("Audio initialized.");
-  }
-}
-void initSd() {
-  SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SD_CS_PIN);
-  if (!SD.begin(SD_CS_PIN, SPI, 80000000UL)) {
-    Serial.println("Card failed, or not present");
-    while (1);
-  }
-  if(DEBUGMODE) {
-    Serial.println("SD card initialized.");
   }
 }
 
 void initDisplay() {
   if (!initUi()) {
     for (;;) ;
-  } else if (DEBUGMODE) {
-    Serial.println("Display initialized.");
+  } else {
+  // haal het screen object uit de UI-module en registreer het bij de
+  // initializatiemodule. The UI module creates and owns the screen object
+  // (if applicable) so we only retrieve a pointer here.
+  auto* initScreen = getInitializationScreen();
+  setInitializationScreen(initScreen);
+
+    // toon welkom / eerste stap meteen
+    initializationStepper("Welkom");
+    delay(INIT_SCREEN_DURATION_MS);
+
+    // optie: toon expliciet alle stappen kort
+    initializationStepper("Display initialized");
+    delay(500);
+
+    // increment lokale step als je dat nog wil
+    initializationStep++;
+    if (DEBUGMODE) {
+      Serial.print(initializationStep );
+      Serial.println("Display initialized.");
+    }
   }
+}
+
+void initSd() {
+  SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SD_CS_PIN);
+  
+  int attempts = 0;
+  while (!SD.begin(SD_CS_PIN, SPI, 80000000UL) && attempts < 5) {
+    Serial.println("Card failed, retrying...");
+    delay(1000);
+    attempts++;
   }
+  
+  if (attempts >= 5) {
+    Serial.println("SD initialization failed after 5 attempts");
+    while(1);  // Nu alsnog stoppen
+  }
+  
+  // zet de stepper op ++
+   initializationStep++;
+      delay(200);
+
+  if(DEBUGMODE) {
+    Serial.print(initializationStep );
+  Serial.println("SD card initialized.");
+  }
+}
+
   
 static void releaseAllButtons() {
   for (int i = 0; i < BUTTON_COUNT; ++i) {
@@ -225,20 +253,16 @@ static void releaseAllButtons() {
 
 void checkPot(uint32_t now) {
   // only read pot at configured interval
-  if ((now - lastVolSample) < POT_READ_INTERVAL_MS) return;
-
+  if ((now - lastPotRead) < POT_READ_INTERVAL_MS) return;
   int raw = analogRead(POT_PIN);
-
 #ifdef POT_POLARITY_INVERTED
   raw = 4095 - raw;
 #endif
-
   // direct naar float 0.0 - 1.0
   float norm = constrain(raw, 0, 4095) / 4095.0f;
-
   if (switchFilterEnabled) {
     // stuur pot naar filter cutoff (wordt verder gesmooth in updateCutoff)
-    filterCutoff = 200.0f + (norm * 3300.0f); // 200..3500 Hz
+    filterCutoff = LOW_PASS_MIN_HZ + (norm * (LOW_PASS_MAX_HZ - LOW_PASS_MIN_HZ));
   } else {
     // deadband + update volume alleen als verandering > threshold
     if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.01f) {
@@ -246,9 +270,41 @@ void checkPot(uint32_t now) {
       player.setVolume(lastVol);
     }
   }
-
   // update timestamp alleen als we daadwerkelijk gelezen hebben
-  lastVolSample = now;
+  lastPotRead = now;
+}
+
+
+static void initSwitchStates() {
+  // lees switches via muxGetChannelState (zie hieronder voor implementatie)
+  bool filterState = readMuxActiveState(SWITCH_CHANNEL_FILTER_ENABLE);
+  bool delayState  = readMuxActiveState(SWITCH_CHANNEL_DELAY_SEND);
+
+  // laat onMuxChange hetzelfde werk doen (logica zit daar al)
+  onMuxChange(SWITCH_CHANNEL_FILTER_ENABLE, filterState);
+  onMuxChange(SWITCH_CHANNEL_DELAY_SEND, delayState);
+
+  // lees pot en initialiseer volume of filter cutoff meteen
+  int raw = analogRead(POT_PIN);
+#ifdef POT_POLARITY_INVERTED
+  raw = 4095 - raw;
+#endif
+  float norm = constrain(raw, 0, 4095) / 4095.0f;
+
+  if (filterState) {
+    filterCutoff = LOW_PASS_MIN_HZ + (norm * (LOW_PASS_MAX_HZ - LOW_PASS_MIN_HZ));
+    smoothedCutoff = filterCutoff; // voorkom grote ramp op start
+    updateCutoff(filterCutoff);
+  } else {
+    lastVol = norm;
+    player.setVolume(lastVol);
+  }
+
+  // zet delay send direct
+  mixer.sendEnabled(delayState);
+
+  // voorkom dat checkPot meteen opnieuw overschrijft timestamp
+  lastPotRead = millis();
 }
 
 
@@ -256,19 +312,21 @@ void setup() {
   Serial.begin(115200);
   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
   
+ 
   initDisplay();
   initSd();
-  initAudio();
-  initPlayer();  
   setMuxChangeCallback(onMuxChange); 
   initMuxScanner(5000);
+  initAudio();
+  initPlayer();  
+  
   SettingsUiDependencies settingsDeps;
   settingsDeps.delayEffect = &delayEffect;
-  settingsDeps.filterEffect = &insertLowPassFilterL; // we sturen alleen de linker filter mee, want die is gelijk aan de rechter
+  settingsDeps.filterEffect = &insertLowPassFilterL; 
   settingsDeps.releaseButtons = releaseAllButtons;
   initSettingsUi(settingsDeps);
-
   initSettingsModeSwitch();
+  initSwitchStates();
 }
 
 
@@ -295,15 +353,15 @@ void loop() {
       }
     }
     
+    muxScanTick();
 
+// HANDLE INPUTS
   checkPot(now);
-  
   switchFilterEnabled ? updateCutoff(filterCutoff) : updateCutoff(20000.0f);
   switchDelaySendEnabled ? mixer.sendEnabled(true) : mixer.sendEnabled(false);
-  
-  muxScanTick();
-
   checkSettingsMode(now);
+  
+
   if (getOperatingMode() == OperatingMode::Settings) {
     updateSettingsScreenUi();
   }

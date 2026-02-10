@@ -6,6 +6,7 @@
 #include <Wire.h>
 #include <algorithm>
 #include "SettingsScreen.h"
+#include "InitializationScreenU8g2.h"
 
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
   #include "SettingsScreenAdafruit.h"
@@ -49,6 +50,15 @@ static int waveformIndex = 0;
 
 ScopeI2SStream scopeI2s(waveformBuffer, &waveformIndex, scopeDisplay.getMutex());
 
+// Pointer to the initialization-screen instance owned by the UI module.
+// This is created during initUi() for the U8g2 backend and can be
+// retrieved by other modules using getInitializationScreen().
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+static InitializationScreenU8g2* g_initScreen = nullptr;
+#else
+static InitializationScreenU8g2* g_initScreen = nullptr; // forward declare for other backends
+#endif
+
 bool initUi() {
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
   Serial.println(F("[UI] Using U8g2 display backend"));
@@ -59,6 +69,18 @@ bool initUi() {
     Serial.println(F("Display init failed"));
     return false;
   }
+  // Create and register the InitializationScreen for the active backend so
+  // other modules can retrieve it via getInitializationScreen(). We only
+  // allocate for the U8g2 backend, other backends will return nullptr.
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
+  if (!g_initScreen) {
+    g_initScreen = new InitializationScreenU8g2(display);
+    g_initScreen->begin();
+    // Keep the screen inactive by default; callers can call enter() when they
+    // want to show it. We don't call enter() here so the normal flow can
+    // control when the welcome screen appears.
+  }
+#endif
   return true;
 }
 
@@ -108,6 +130,10 @@ ISettingsScreen* createSettingsScreen() {
 #else
     return nullptr;
 #endif
+}
+
+InitializationScreenU8g2* getInitializationScreen() {
+  return g_initScreen;
 }
 
 void uiShowSavingOverlay(uint16_t durationMs) {

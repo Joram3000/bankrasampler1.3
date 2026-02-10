@@ -47,20 +47,3 @@ void initializationStepper(const char *stepMessage) {
 }
 
 
-
-//     // Show a short initialization screen animation (1s) instead of a blind delay.
-// #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-//     if (auto* display = getU8g2Display()) {
-//       if (!initializationScreen) {
-//         initializationScreen = new InitializationScreenU8g2(*display, INIT_SCREEN_MESSAGE, INIT_SCREEN_DURATION_MS);
-//         initializationScreen->begin();
-//       }
-//       // ensure the screen shows for the configured duration
-//       initializationScreen->enter();
-//       initializationScreen->update();
-//     }
-// #else
-//     delay(1000);
-// #endif
-//   Serial.print("Init done, switching to Performance mode");
-//     setOperatingMode(OperatingMode::Performance);
