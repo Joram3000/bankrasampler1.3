@@ -36,37 +36,12 @@ static uint32_t lastPotRead = 0;// timestamp of last pot read
 static float lastVol = -1.0f;
 static bool switchDelaySendEnabled = false;
 static bool switchFilterEnabled = false;
-
-// filtercutof
 static float filterCutoff = LOW_PASS_CUTOFF_HZ;
 float smoothedCutoff = filterCutoff;
 
-// UI Screens
-
-// --- Buttons ---
-Button buttons[BUTTON_COUNT] = {
-  Button(BUTTON_CHANNEL_ON_MUX[0], SAMPLE_PATHS[0]),
-  Button(BUTTON_CHANNEL_ON_MUX[1], SAMPLE_PATHS[1]),
-  Button(BUTTON_CHANNEL_ON_MUX[2], SAMPLE_PATHS[2]),
-  Button(BUTTON_CHANNEL_ON_MUX[3], SAMPLE_PATHS[3]),
-  Button(BUTTON_CHANNEL_ON_MUX[4], SAMPLE_PATHS[4]),
-  Button(BUTTON_CHANNEL_ON_MUX[5], SAMPLE_PATHS[5]),
-};
-
-static bool prevLatched[BUTTON_COUNT] = { false, false, false, false, false, false };
-
-// Forward declarations ?
+// Forward declarations
 void playSample(int index);
 void stopSample(int index);
-
-static int findButtonIndexForChannel(uint8_t channel) {
-  for (int i = 0; i < BUTTON_COUNT; ++i) {
-    if (BUTTON_CHANNEL_ON_MUX[i] == channel) {
-      return i;
-    }
-  }
-  return -1;
-}
 
 
 void updateCutoff(float target) {
@@ -248,13 +223,6 @@ void initSd() {
   }
 }
   
-static void releaseAllButtons() {
-  for (int i = 0; i < BUTTON_COUNT; ++i) {
-    buttons[i].release();
-  }
-}
-
-
 void checkPot(uint32_t now) {
   // only read pot at configured interval
   if ((now - lastPotRead) < POT_READ_INTERVAL_MS) return;

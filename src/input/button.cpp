@@ -1,71 +1,39 @@
 #include "button.h"
 #include <Arduino.h>
-#include <AudioTools.h>
 #include "config/config.h"
-#include "mux.h"
-
 // Implementations for Button
-Button::Button(int pinOrChannel, const char* samplePath) : pin(pinOrChannel), samplePath(samplePath) {}
+Button::Button(int pinOrChannel) : pin(pinOrChannel) {}
 
-void Button::begin() {
-  rawState = false;
-  debouncedState = false;
-  lastDebounceTime = 0;
-  lastTriggerTime = 0;
-  latched = false;
+
+
+// --- Buttons ---
+Button buttons[BUTTON_COUNT] = {
+  Button(BUTTON_CHANNEL_ON_MUX[0]),
+  Button(BUTTON_CHANNEL_ON_MUX[1]),
+  Button(BUTTON_CHANNEL_ON_MUX[2]),
+  Button(BUTTON_CHANNEL_ON_MUX[3]),
+  Button(BUTTON_CHANNEL_ON_MUX[4]),
+  Button(BUTTON_CHANNEL_ON_MUX[5]),
+};
+
+int findButtonIndexForChannel(uint8_t channel) {
+  for (int i = 0; i < BUTTON_COUNT; ++i) {
+    if (BUTTON_CHANNEL_ON_MUX[i] == channel) {
+      return i;
+    }
+  }
+  return -1;
 }
 
-// bool Button::update(uint32_t now) {
-//   bool raw = readPressedHardware();
-//   if (raw != rawState) {
-//     lastDebounceTime = now;
-//     rawState = raw;
-//   }
-//   if ((now - lastDebounceTime) > BUTTON_DEBOUNCE_MS && raw != debouncedState) {
-//     debouncedState = raw;
-//     if (debouncedState) {
-//      if (!latched && (now - lastTriggerTime) > BUTTON_RETRIGGER_GUARD_MS) {
-//         lastTriggerTime = now;
-//         latched = true;
-//         if (DEBUGMODE) {
-//           Serial.print(F("Button pressed: "));
-//           Serial.println(samplePath ? samplePath : "<unnamed>");
-//         }
-//         return true;
-//       }
-//     } else {
-//       latched = false;
-//       if (DEBUGMODE) {
-//         Serial.print(F("Button released: "));
-//         Serial.println(samplePath ? samplePath : "<unnamed>");
-//       }
-//     }
-//   }
-//   return false;
-// }
+
+// kan dit niet gemerged worden met void Button::release?
+void releaseAllButtons() {
+  for (int i = 0; i < BUTTON_COUNT; ++i) {
+    buttons[i].release();
+
+    
+  }
+}
 
 void Button::release() { latched = false; lastTriggerTime = 0; }
-
-void Button::sync(uint32_t now) {
-  bool raw = readPressedHardware();
-  rawState = raw;
-  debouncedState = raw;
-  latched = raw;
-  lastDebounceTime = now;
-  lastTriggerTime = raw ? now : 0;
-}
-
-// bool Button::readRaw() const {
-//   return readPressedHardware();
-// }
-
-bool Button::isLatched() const { return latched; }
-
-// const char* Button::getPath() const { return samplePath; }
-
-
-bool Button::readPressedHardware() const {
-  return readMuxActiveState(static_cast<uint8_t>(pin));
-  
-}
 
