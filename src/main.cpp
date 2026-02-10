@@ -12,8 +12,8 @@
 #include "config/config.h"
 #include "config/settings.h"
 #include "initialization.h" 
+#include "SettingsScreen.h"
 
-// InitializationScreen is provided by the UI module; use the getter
 // Audio system
 AudioInfo info(44100, 2, 16);
 // ===== Single audio player =====
@@ -24,9 +24,10 @@ WAVDecoder decoder;
 DelayMixerStream mixer;
 FilteredStream<int16_t, float> filteredStream(mixer,2); 
 AudioPlayer player(source, filteredStream, decoder);
-static LowPassFilter<float> insertLowPassFilterL;
-static LowPassFilter<float> insertLowPassFilterR;
-static Delay delayEffect;
+
+static LowPassFilter<float> insertFilterL;
+static LowPassFilter<float> insertFilterR;
+static Delay delayEffect1;
 
 // State
 int initializationStep = 0;
@@ -71,8 +72,25 @@ static int findButtonIndexForChannel(uint8_t channel) {
 void updateCutoff(float target) {
   smoothedCutoff += 0.1f * (target - smoothedCutoff);
 
-  insertLowPassFilterL.begin(smoothedCutoff, info.sample_rate, 0.5f);
-  insertLowPassFilterR.begin(smoothedCutoff, info.sample_rate, 0.5f);
+  static float lastAppliedQ = -1.0f;
+  static float lastAppliedFreq = -1.0f;
+
+  // Cache pointer één keer per call i.p.v. meerdere calls
+  if (auto ss = static_cast<decltype(getSettingsScreen())>(getSettingsScreen())) {
+    float newQ = ss->getFilterQ();
+    if (fabsf(newQ - lastAppliedQ) > 0.05f || fabsf(smoothedCutoff - lastAppliedFreq) > 0.5f) {
+      insertFilterL.begin(smoothedCutoff, info.sample_rate, newQ);
+      insertFilterR.begin(smoothedCutoff, info.sample_rate, newQ);
+      lastAppliedQ = newQ;
+      lastAppliedFreq = smoothedCutoff;
+    }
+  } else {
+    if (fabsf(smoothedCutoff - lastAppliedFreq) > 0.5f) {
+      insertFilterL.begin(smoothedCutoff, info.sample_rate, LOW_PASS_Q);
+      insertFilterR.begin(smoothedCutoff, info.sample_rate, LOW_PASS_Q);
+      lastAppliedFreq = smoothedCutoff;
+    }
+  }
 }
 
 // This is called whenever a change on the mux is detected (button press/release or switch toggle)
@@ -150,11 +168,9 @@ void initPlayer() {
   player.begin();
   player.setActive(false);
 
-delay(200); 
   if(DEBUGMODE) {
     Serial.println("player initialized.");
   }
-
 }
 
 void initAudio() {
@@ -164,8 +180,8 @@ void initAudio() {
   config.pin_ws   = I2S_PIN_WS;
   config.pin_data = I2S_PIN_DATA;
   config.i2s_format = I2S_STD_FORMAT; 
-  config.buffer_count = 6;
-  config.buffer_size = 512;
+  config.buffer_count = 2;
+  config.buffer_size = 256;
 
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
@@ -173,18 +189,17 @@ void initAudio() {
     scopeI2s.setAudioInfo(info);
   }
 
-  filteredStream.setFilter(0, &insertLowPassFilterL);
-  filteredStream.setFilter(1, &insertLowPassFilterR);
+  filteredStream.setFilter(0, &insertFilterL);
+  filteredStream.setFilter(1, &insertFilterR);
 
-  delayEffect.setSampleRate(info.sample_rate);
-  delayEffect.setFeedback(DEFAULT_DELAY_FEEDBACK); 
-  delayEffect.setDepth(DEFAULT_DELAY_DEPTH); 
-  delayEffect.setDuration(DEFAULT_DELAY_TIME_MS);
-  delayEffect.setActive(true);
-  
-  mixer.begin(scopeI2s, delayEffect, info);
+  delayEffect1.setSampleRate(info.sample_rate);
+  delayEffect1.setFeedback(DEFAULT_DELAY_FEEDBACK); 
+  delayEffect1.setDepth(DEFAULT_DELAY_DEPTH); 
+  delayEffect1.setDuration(DEFAULT_DELAY_TIME_MS);
+  delayEffect1.setActive(true);
+
+  mixer.begin(scopeI2s, delayEffect1, info);
   initializationStep++;
-  delay(200); 
   if(DEBUGMODE) {
      Serial.print(initializationStep );
     Serial.println("Audio initialized.");
@@ -193,23 +208,17 @@ void initAudio() {
 
 void initDisplay() {
   if (!initUi()) {
-    for (;;) ;
+    // oude code: for(;;);
+    // Niet blokkeren: log en ga in veilige modus (geen display), of retry a-synchroon.
+    Serial.println(F("Display init failed, continuing without UI"));
+    // alternatief: zet een flag showUiAvailable = false en laat rest van init doorgaan
+    return;
   } else {
-  // haal het screen object uit de UI-module en registreer het bij de
-  // initializatiemodule. The UI module creates and owns the screen object
-  // (if applicable) so we only retrieve a pointer here.
-  auto* initScreen = getInitializationScreen();
-  setInitializationScreen(initScreen);
-
-    // toon welkom / eerste stap meteen
+    auto* initScreen = getInitializationScreen();
+    setInitializationScreen(initScreen);
     initializationStepper("Welkom");
     delay(INIT_SCREEN_DURATION_MS);
-
-    // optie: toon expliciet alle stappen kort
     initializationStepper("Display initialized");
-    delay(500);
-
-    // increment lokale step als je dat nog wil
     initializationStep++;
     if (DEBUGMODE) {
       Serial.print(initializationStep );
@@ -224,7 +233,7 @@ void initSd() {
   int attempts = 0;
   while (!SD.begin(SD_CS_PIN, SPI, 80000000UL) && attempts < 5) {
     Serial.println("Card failed, retrying...");
-    delay(1000);
+    delay(100);
     attempts++;
   }
   
@@ -232,17 +241,12 @@ void initSd() {
     Serial.println("SD initialization failed after 5 attempts");
     while(1);  // Nu alsnog stoppen
   }
-  
-  // zet de stepper op ++
-   initializationStep++;
-      delay(200);
-
+  initializationStep++;
   if(DEBUGMODE) {
     Serial.print(initializationStep );
   Serial.println("SD card initialized.");
   }
 }
-
   
 static void releaseAllButtons() {
   for (int i = 0; i < BUTTON_COUNT; ++i) {
@@ -319,10 +323,9 @@ void setup() {
   initMuxScanner(5000);
   initAudio();
   initPlayer();  
-  
   SettingsUiDependencies settingsDeps;
-  settingsDeps.delayEffect = &delayEffect;
-  settingsDeps.filterEffect = &insertLowPassFilterL; 
+  settingsDeps.delayEffect = &delayEffect1;
+  settingsDeps.filterEffect = &insertFilterL; 
   settingsDeps.releaseButtons = releaseAllButtons;
   initSettingsUi(settingsDeps);
   initSettingsModeSwitch();
@@ -335,8 +338,7 @@ void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
     if (!player.isActive()) {
-      // scopeI2s.feedSilenceFrames(kScopeSilenceFramesPerLoop);
-      mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
+       mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
     }
     
   // check of sample klaar is
