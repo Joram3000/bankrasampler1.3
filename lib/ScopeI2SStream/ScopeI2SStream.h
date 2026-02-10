@@ -16,7 +16,7 @@ class ScopeI2SStream : public I2SStream {
     int* waveformIndex;
     SemaphoreHandle_t* mutex;
     int downsampleRate;
-    float amplitudeGamma = 0.5f; // Schaalfactor voor amplitude (wortel)
+    float amplitudeGamma = 0.4f; // Schaalfactor voor amplitude (wortel) // hoe kleiner de waarde, hoe meer de pieken worden benadrukt
     int sampleBytes = sizeof(int16_t);
     int channelCount = 2;
     uint32_t sampleCounter = 0;
@@ -29,7 +29,7 @@ class ScopeI2SStream : public I2SStream {
      * @param displayMutex Pointer naar mutex voor thread-safe access
      * @param downsample Neem 1 van elke N samples (default: 16)
      */
-    ScopeI2SStream(int16_t* buffer, int* index, SemaphoreHandle_t* displayMutex, int downsample = 4) 
+    ScopeI2SStream(int16_t* buffer, int* index, SemaphoreHandle_t* displayMutex, int downsample = 2) 
       : waveformBuffer(buffer), 
         waveformIndex(index), 
         mutex(displayMutex),
