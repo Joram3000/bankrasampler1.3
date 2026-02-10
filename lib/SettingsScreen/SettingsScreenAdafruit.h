@@ -17,7 +17,7 @@ public:
     using Button = ISettingsScreen::Button;
 
     enum Item : uint8_t {
-        ITEM_ZOOM = 0,
+        ITEM_ZOOM,
         ITEM_DELAY_TIME,
         ITEM_DELAY_FEEDBACK,
         ITEM_FILTER_Q,
@@ -71,32 +71,29 @@ public:
     }
 
     float getZoom() const override { return zoom; }
-    void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
-
+    
     float getDelayTimeMs() const override { return delayTimeMs; }
     float getDelayFeedback() const override { return delayFeedback; }
     float getFilterQ() const override { return filterQ; }
-
     bool getCompressorEnabled() const override { return compEnabled; }
-
+    
+    void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
     void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
     void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
     void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
-
     void setCompressorEnabled(bool enabled) override { compEnabled = enabled; markDirty(); notifyCompressorEnabledChanged(); }
 
 private:
     Adafruit_SSD1306 &gfx;
     bool active = false;
     bool editing = false;
-    float zoom = DEFAULT_HORIZ_ZOOM;
     bool dirty = true;
     unsigned long lastDrawMs = 0;
     uint8_t selection = 0;
-
+    
+    float zoom = DEFAULT_HORIZ_ZOOM;
     float delayTimeMs = DEFAULT_DELAY_TIME_MS;
     float delayFeedback = DEFAULT_DELAY_FEEDBACK;
-    float filterCutoffHz = LOW_PASS_CUTOFF_HZ;
     float filterQ = LOW_PASS_Q;
     bool compEnabled = MASTER_COMPRESSOR_ENABLED;
 

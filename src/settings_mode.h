@@ -10,7 +10,7 @@ enum class OperatingMode { Performance, Settings, Initializing };
 
 struct SettingsUiDependencies {
   audio_tools::Delay* delayEffect = nullptr;
-  audio_tools::LowPassFilter<float>* filterEffect = nullptr;
+  void* filterEffect = nullptr; // Can be LowPassFilter, HighPassFilter, or BandPassFilter<float>*
   std::function<void()> releaseButtons;
 };
 
@@ -19,6 +19,7 @@ void initSettingsUi(const SettingsUiDependencies& deps);
 
 // Read and apply the physical settings-mode switch state.
 void initSettingsModeSwitch();
+
 void checkSettingsMode(uint32_t now);
 
 // Update settings UI during the loop when active.

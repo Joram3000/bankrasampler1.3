@@ -5,6 +5,12 @@
 
 #include "SettingsScreen.h"
 
+
+// it would be nice to add downsample
+// and make filters switchable
+// downsample too
+// en debugmode
+
 namespace {
 constexpr const char* kSettingsPath = "/settings.txt";
 }

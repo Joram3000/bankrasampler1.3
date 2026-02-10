@@ -76,6 +76,17 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
       settingsDeps.delayEffect->setFeedback(feedback);
     }
   });
+  // Apply filter Q changes from the UI to the live filter effect and persist in local state
+  settingsScreen->setFilterQCallback([](float q) {
+    // store new Q value; the audio thread (main) will read the live value
+    // from the settings screen when updating the filter coefficients
+    currentFilterQ = q;
+  });
+
+  // Track compressor enabled state from the UI
+  settingsScreen->setCompressorEnabledCallback([](bool enabled) {
+    currentCompEnabled = enabled;
+  });
 
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);

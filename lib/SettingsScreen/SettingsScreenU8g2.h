@@ -16,7 +16,7 @@ public:
     using Button = ISettingsScreen::Button;
 
 	enum Item : uint8_t {
-		ITEM_ZOOM = 0,
+		ITEM_ZOOM,
 		ITEM_DELAY_TIME,
 		ITEM_DELAY_FEEDBACK,
 		ITEM_FILTER_Q,
