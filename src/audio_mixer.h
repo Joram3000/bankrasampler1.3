@@ -31,7 +31,7 @@ public:
     }
 
 void sendEnabled(bool enabled) {
-        sendLevel = enabled ? 1.0f : 0.0f;
+        sendLevel = enabled ? 0.9f : 0.0f;
     }
 
     void setAudioInfo(AudioInfo info) override {
@@ -47,9 +47,6 @@ void sendEnabled(bool enabled) {
 
     void setOutput(Print &out) override { p_out = &out; }
 
-  // When there is no active source we can pump silence through the mixer to
-  // advance internal effects (e.g., delay buffer) so tails continue to decay.
-  // frames: number of audio frames (samples per channel) to push.
   void pumpSilenceFrames(size_t frames) {
     if (frames == 0) return;
     size_t sampleCount = frames * std::max<int>(1, channels);
@@ -88,9 +85,9 @@ void sendEnabled(bool enabled) {
 private:
     Delay *delay = nullptr;
 
-    float dryLevel = 1.0f;
-    float sendLevel = 1.0f;
-    float wetLevel = 0.8f;
+    float dryLevel = 0.9f;
+    float sendLevel = 0.9f;
+    float wetLevel = 0.9f;
 
     AudioInfo audioInfo{44100, 2, 16};
     int sampleBytes = 2;
