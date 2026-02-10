@@ -13,17 +13,17 @@ constexpr float DELAY_TIME_MAX_MS        = 1000.0f;
 constexpr float DELAY_TIME_STEP_MS       = 10.0f;
 
 constexpr float DELAY_FEEDBACK_MIN       = 0.0f;
-constexpr float DELAY_FEEDBACK_MAX       = 0.95f;
+constexpr float DELAY_FEEDBACK_MAX       = 0.99f;
 constexpr float DELAY_FEEDBACK_STEP      = 0.02f;
 
 // FILTER SETTINGS
 constexpr float LOW_PASS_CUTOFF_HZ = 777.0f;
 constexpr float LOW_PASS_Q         = 0.5f;
-constexpr float LOW_PASS_MIN_HZ    = 300.0f;
+constexpr float LOW_PASS_MIN_HZ    = 150.0f;
 constexpr float LOW_PASS_MAX_HZ    = 4500.0f;
 
-constexpr float LOW_PASS_Q_MIN      = 0.2f;
-constexpr float LOW_PASS_Q_MAX      = 2.5f;
+constexpr float LOW_PASS_Q_MIN      = 0.1f;
+constexpr float LOW_PASS_Q_MAX      = 1.0f;
 constexpr float LOW_PASS_Q_STEP     = 0.05f;
 
 // Master bus compression (gentle glue on final output)

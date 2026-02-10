@@ -11,10 +11,10 @@ class DelayMixerStream : public ModifyingStream {
 public:
     DelayMixerStream() = default;
 
-    void begin(Print &out, Delay &delayRef, AudioInfo info) {
+    void begin(Print &out, Delay &delayRef1, AudioInfo info) {
         setAudioInfo(info);
         setOutput(out);
-        setDelay(delayRef);
+        setDelay(delayRef1);
     }
 
     void setDelay(Delay &d) {
