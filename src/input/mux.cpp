@@ -47,7 +47,7 @@ void Sn74hc151Mux::begin() {
   if (INPUT_MUX_PIN_Y >= 0) pinMode(INPUT_MUX_PIN_Y, INPUT);
   selectChannel(0);
   initialized = true;
-  Serial.println(F("Input MUX initialized"));
+
 }
 
 void Sn74hc151Mux::selectChannel(uint8_t channel) {

@@ -8,3 +8,4 @@ bool readMuxActiveState(uint8_t channel);
 void initMuxScanner(uint32_t scanIntervalUs = 5000);
 void muxScanTick(); // to be called from main loop
 void setMuxChangeCallback(MuxChangeCallback callback);
+// bool muxGetChannelState(uint8_t channel);

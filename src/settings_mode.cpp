@@ -13,7 +13,6 @@ ISettingsScreen* settingsScreen = nullptr;
 OperatingMode currentMode = OperatingMode::Initializing;
 
 // Persisted settings state (used to seed UI on boot)
-float currentFilterCutoffHz = LOW_PASS_CUTOFF_HZ;
 float currentFilterQ = LOW_PASS_Q;
 float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
 float currentDelayDepth = DEFAULT_DELAY_DEPTH;
@@ -81,7 +80,6 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);
   settingsScreen->setDelayFeedback(currentDelayFeedback);
-  settingsScreen->setFilterCutoffHz(currentFilterCutoffHz);
   settingsScreen->setFilterQ(currentFilterQ);
   settingsScreen->setCompressorEnabled(currentCompEnabled);
 

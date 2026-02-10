@@ -21,11 +21,10 @@ constexpr float LOW_PASS_CUTOFF_HZ = 777.0f;
 constexpr float LOW_PASS_Q         = 0.5f;
 constexpr float LOW_PASS_MIN_HZ    = 300.0f;
 constexpr float LOW_PASS_MAX_HZ    = 4500.0f;
-constexpr float LOW_PASS_STEP_HZ   = 25.0f;
 
 constexpr float LOW_PASS_Q_MIN      = 0.2f;
 constexpr float LOW_PASS_Q_MAX      = 2.5f;
 constexpr float LOW_PASS_Q_STEP     = 0.05f;
 
 // Master bus compression (gentle glue on final output)
-constexpr bool MASTER_COMPRESSOR_ENABLED = true;
+constexpr bool MASTER_COMPRESSOR_ENABLED = false;

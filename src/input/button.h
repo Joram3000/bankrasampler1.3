@@ -7,7 +7,7 @@ class Button {
 public:
   Button(int pinOrChannel, const char* samplePath);
   void begin();
-  bool update(uint32_t now);
+  // bool update(uint32_t now);
   void release();
   void sync(uint32_t now);
   // bool readRaw() const;

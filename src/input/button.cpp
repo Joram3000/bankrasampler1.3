@@ -15,34 +15,34 @@ void Button::begin() {
   latched = false;
 }
 
-bool Button::update(uint32_t now) {
-  bool raw = readPressedHardware();
-  if (raw != rawState) {
-    lastDebounceTime = now;
-    rawState = raw;
-  }
-  if ((now - lastDebounceTime) > BUTTON_DEBOUNCE_MS && raw != debouncedState) {
-    debouncedState = raw;
-    if (debouncedState) {
-     if (!latched && (now - lastTriggerTime) > BUTTON_RETRIGGER_GUARD_MS) {
-        lastTriggerTime = now;
-        latched = true;
-        if (DEBUGMODE) {
-          Serial.print(F("Button pressed: "));
-          Serial.println(samplePath ? samplePath : "<unnamed>");
-        }
-        return true;
-      }
-    } else {
-      latched = false;
-      if (DEBUGMODE) {
-        Serial.print(F("Button released: "));
-        Serial.println(samplePath ? samplePath : "<unnamed>");
-      }
-    }
-  }
-  return false;
-}
+// bool Button::update(uint32_t now) {
+//   bool raw = readPressedHardware();
+//   if (raw != rawState) {
+//     lastDebounceTime = now;
+//     rawState = raw;
+//   }
+//   if ((now - lastDebounceTime) > BUTTON_DEBOUNCE_MS && raw != debouncedState) {
+//     debouncedState = raw;
+//     if (debouncedState) {
+//      if (!latched && (now - lastTriggerTime) > BUTTON_RETRIGGER_GUARD_MS) {
+//         lastTriggerTime = now;
+//         latched = true;
+//         if (DEBUGMODE) {
+//           Serial.print(F("Button pressed: "));
+//           Serial.println(samplePath ? samplePath : "<unnamed>");
+//         }
+//         return true;
+//       }
+//     } else {
+//       latched = false;
+//       if (DEBUGMODE) {
+//         Serial.print(F("Button released: "));
+//         Serial.println(samplePath ? samplePath : "<unnamed>");
+//       }
+//     }
+//   }
+//   return false;
+// }
 
 void Button::release() { latched = false; lastTriggerTime = 0; }
 

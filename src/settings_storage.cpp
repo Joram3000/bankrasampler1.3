@@ -38,10 +38,6 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
 			float df = line.substring(9).toFloat();
 			settingsScreen->setDelayFeedback(df);
 			Serial.printf("Loaded delay_fb=%.2f from settings\n", df);
-		} else if (line.startsWith("filter_hz=")) {
-			float fh = line.substring(10).toFloat();
-			settingsScreen->setFilterCutoffHz(fh);
-			Serial.printf("Loaded filter_hz=%.0f from settings\n", fh);
 		} else if (line.startsWith("filter_q=")) {
 			float fq = line.substring(9).toFloat();
 			settingsScreen->setFilterQ(fq);
@@ -72,8 +68,6 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
 	f.printf("delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
 	Serial.printf(" delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
 	f.printf("delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
-	Serial.printf(" filter_hz=%.0f\n", settingsScreen->getFilterCutoffHz());
-	f.printf("filter_hz=%.0f\n", settingsScreen->getFilterCutoffHz());
 	Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
 	f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
 	Serial.printf(" comp_enabled=%s\n", settingsScreen->getCompressorEnabled() ? "true" : "false");
