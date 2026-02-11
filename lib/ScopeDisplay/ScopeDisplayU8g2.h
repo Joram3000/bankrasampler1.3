@@ -191,7 +191,7 @@ class ScopeDisplayU8g2 {
       display->setFontMode(0);
       display->setBitmapMode(false);
       display->setDrawColor(1);
-      display->sendF("c", DISPLAY_INVERT_COLORS ? 0xA7 : 0xA6); // force normal/invert state
+      display->sendF("c", 0xA6); 
       display->clearBuffer();
       display->setFont(u8g2_font_5x7_tf);
       display->drawStr(0, 8, "Initializing...");

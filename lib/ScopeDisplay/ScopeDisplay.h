@@ -213,7 +213,6 @@ class ScopeDisplay {
       if(!display->begin(SSD1306_SWITCHCAPVCC, i2cAddress)) {
         return false;
       }
-      display->invertDisplay(DISPLAY_INVERT_COLORS);
       
       // Toon startup bericht
       display->clearDisplay();

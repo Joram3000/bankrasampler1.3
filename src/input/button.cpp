@@ -1,10 +1,8 @@
 #include "button.h"
 #include <Arduino.h>
 #include "config/config.h"
-// Implementations for Button
+
 Button::Button(int pinOrChannel) : pin(pinOrChannel) {}
-
-
 
 // --- Buttons ---
 Button buttons[BUTTON_COUNT] = {
@@ -24,7 +22,6 @@ int findButtonIndexForChannel(uint8_t channel) {
   }
   return -1;
 }
-
 
 // kan dit niet gemerged worden met void Button::release?
 void releaseAllButtons() {

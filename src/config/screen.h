@@ -14,7 +14,6 @@ constexpr int DISPLAY_WIDTH  = 128;
 constexpr int DISPLAY_HEIGHT = 64;
 constexpr int NUM_WAVEFORM_SAMPLES = DISPLAY_WIDTH;
 constexpr uint8_t DISPLAY_I2C_ADDRESS = 0x3C;
-constexpr bool DISPLAY_INVERT_COLORS = false;
 
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
 	// Pas deze macro's aan als je een andere U8g2 constructor nodig hebt

@@ -20,15 +20,16 @@ constexpr const char* SAMPLE_PATHS[] = {
 };
 
 constexpr uint32_t BUTTON_FADE_MS = 30;
-constexpr uint32_t BUTTON_DEBOUNCE_MS = 4;
+constexpr uint32_t BUTTON_DEBOUNCE_MS = 3;
 constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 10;
+constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 2;
 
 const int COPIED_ZERO_THRESHOLD = 3; // number of consecutive loops with copied==0
 static const size_t kScopeSilenceFramesPerLoop = 64; // number of silence frames to feed per loop when no audio
   
 #define POT_POLARITY_INVERTED 1
-constexpr uint32_t POT_READ_INTERVAL_MS = 25;
+
+constexpr uint32_t POT_READ_INTERVAL_MS = 20;
 static const uint32_t SETTINGS_POLL_INTERVAL_MS = 100;
-static const uint32_t SETTINGS_DEBOUNCE_MS = 25;
-constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 5;
+static const uint32_t SETTINGS_DEBOUNCE_MS = 20;
 
