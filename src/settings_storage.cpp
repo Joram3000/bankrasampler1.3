@@ -48,13 +48,7 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
 			float fq = line.substring(9).toFloat();
 			settingsScreen->setFilterQ(fq);
 			Serial.printf("Loaded filter_q=%.2f from settings\n", fq);
-		} else if (line.startsWith("comp_enabled=")) {
-			String ceStr = line.substring(13);
-			ceStr.toLowerCase();
-			bool ce = (ceStr == "1" || ceStr == "on" || ceStr == "true");
-			settingsScreen->setCompressorEnabled(ce);
-			Serial.printf("Loaded comp_enabled=%s from settings\n", ce ? "true" : "false");
-		}
+		} 
 
 	}
 	f.close();
@@ -76,8 +70,6 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
 	f.printf("delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
 	Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
 	f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
-	Serial.printf(" comp_enabled=%s\n", settingsScreen->getCompressorEnabled() ? "true" : "false");
-	f.printf("comp_enabled=%s\n", settingsScreen->getCompressorEnabled() ? "true" : "false");
 	Serial.println("Settings saved.");
 
 

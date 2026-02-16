@@ -15,9 +15,7 @@ OperatingMode currentMode = OperatingMode::Initializing;
 // Persisted settings state (used to seed UI on boot)
 float currentFilterQ = LOW_PASS_Q;
 float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
-float currentDelayDepth = DEFAULT_DELAY_DEPTH;
 float currentDelayFeedback = DEFAULT_DELAY_FEEDBACK;
-bool currentCompEnabled = MASTER_COMPRESSOR_ENABLED;
 
 // Settings mode switch state
 bool settingsModeRawState = false;
@@ -34,17 +32,23 @@ void applyOperatingModeChange(OperatingMode newMode) {
   }
   if (newMode == currentMode) return;
 
-  if (newMode == OperatingMode::Settings) {
+  if (newMode == OperatingMode::Initializing) {
     setScopeDisplaySuspended(true);
-    if (settingsScreen) settingsScreen->enter();
-    if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
   } else {
-    if (settingsScreen) settingsScreen->exit();
-    setScopeDisplaySuspended(false);
-    if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
-    if (currentMode == OperatingMode::Settings) {
-      uiShowSavingOverlay(250);
-      saveSettingsToSd(settingsScreen);
+    if (currentMode == OperatingMode::Initializing) {
+    }
+
+    if (newMode == OperatingMode::Settings) {
+      setScopeDisplaySuspended(true);
+      if (settingsScreen) settingsScreen->enter();
+      if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
+    } else {
+      if (settingsScreen) settingsScreen->exit();
+      setScopeDisplaySuspended(false);
+      if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
+      if (currentMode == OperatingMode::Settings) {
+        saveSettingsToSd(settingsScreen);
+      }
     }
   }
 
@@ -83,16 +87,11 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
     currentFilterQ = q;
   });
 
-  // Track compressor enabled state from the UI
-  settingsScreen->setCompressorEnabledCallback([](bool enabled) {
-    currentCompEnabled = enabled;
-  });
 
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);
   settingsScreen->setDelayFeedback(currentDelayFeedback);
   settingsScreen->setFilterQ(currentFilterQ);
-  settingsScreen->setCompressorEnabled(currentCompEnabled);
 
   loadSettingsFromSd(settingsScreen);
 }
@@ -101,7 +100,9 @@ void initSettingsModeSwitch() {
   pinMode(SWITCH_PIN_SETTINGS_MODE, INPUT);
   bool settingsModeInit = (digitalRead(SWITCH_PIN_SETTINGS_MODE) == LOW);
   settingsModeRawState = settingsModeDebouncedState = settingsModeInit;
-  applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
+  if (currentMode != OperatingMode::Initializing) {
+    applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
+  }
 
   if (DEBUGMODE) {
     Serial.print("Settings mode switch initialized to: ");
@@ -121,7 +122,9 @@ void checkSettingsMode(uint32_t now) {
 
   if ((now - settingsModeLastDebounceTime) >= SETTINGS_DEBOUNCE_MS && settingsModeDebouncedState != settingsModeRawState) {
     settingsModeDebouncedState = settingsModeRawState;
-    applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
+    if (currentMode != OperatingMode::Initializing) {
+      applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
+    }
     if (DEBUGMODE) {
       Serial.print(F("Settings mode -> "));
       Serial.println(settingsModeDebouncedState ? F("ON") : F("OFF"));
@@ -167,7 +170,8 @@ OperatingMode getOperatingMode() {
 }
 
 void setOperatingMode(OperatingMode mode) {
-  currentMode = mode;
+  // Ensure mode transitions run the same enter/exit logic as the physical switch
+  applyOperatingModeChange(mode);
 }
 
 ISettingsScreen* getSettingsScreen() {

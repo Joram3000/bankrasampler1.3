@@ -5,7 +5,7 @@
 #include <functional>
 
 class ISettingsScreen;
-
+// deze hoort er toch eigenlijk niet 
 enum class OperatingMode { Performance, Settings, Initializing };
 
 struct SettingsUiDependencies {
@@ -31,6 +31,7 @@ bool handleSettingsButtonInput(size_t buttonIndex, bool active);
 
 // Operating mode accessors for the main loop.
 OperatingMode getOperatingMode();
+
 void setOperatingMode(OperatingMode mode);
 
 // Optional access to the live settings screen.

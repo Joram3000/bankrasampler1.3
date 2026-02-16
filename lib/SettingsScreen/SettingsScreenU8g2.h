@@ -20,7 +20,6 @@ public:
 		ITEM_DELAY_TIME,
 		ITEM_DELAY_FEEDBACK,
 		ITEM_FILTER_Q,
-		ITEM_COMP_ENABLED,
 		ITEM_COUNT
 	};
 
@@ -31,7 +30,6 @@ public:
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
 	void setDelayTimeCallback(std::function<void(float)> cb) override { delayTimeCallback = cb; }
 	void setDelayFeedbackCallback(std::function<void(float)> cb) override { delayFeedbackCallback = cb; }
-	void setCompressorEnabledCallback(std::function<void(bool)> cb) override { compEnabledCallback = cb; }
 
 	void begin() override {}
 
@@ -95,12 +93,10 @@ public:
 	float getDelayTimeMs() const override { return delayTimeMs; }
 	float getDelayFeedback() const override { return delayFeedback; }
 	float getFilterQ() const override { return filterQ; }
-	bool getCompressorEnabled() const override { return compEnabled; }
 	void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
 	void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
 	void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
-	void setCompressorEnabled(bool enabled) override { compEnabled = enabled; markDirty(); notifyCompressorEnabledChanged(); }
 private:
 	U8G2 &u8g2;
 	bool active = false;
@@ -114,13 +110,11 @@ private:
 	float delayDepth = DEFAULT_DELAY_DEPTH;
 	float delayFeedback = DEFAULT_DELAY_FEEDBACK;
 	float filterQ = LOW_PASS_Q;
-	bool compEnabled = MASTER_COMPRESSOR_ENABLED;
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(float)> filterQCallback;
 	std::function<void(float)> delayTimeCallback;
 	std::function<void(float)> delayFeedbackCallback;
-	std::function<void(bool)> compEnabledCallback;
 
 	void markDirty() { dirty = true; }
 
@@ -128,7 +122,6 @@ private:
 	void notifyDelayTimeChanged() { if (delayTimeCallback) delayTimeCallback(delayTimeMs); }
 	void notifyDelayFeedbackChanged() { if (delayFeedbackCallback) delayFeedbackCallback(delayFeedback); }
 	void notifyFilterQChanged() { if (filterQCallback) filterQCallback(filterQ); }
-	void notifyCompressorEnabledChanged() { if (compEnabledCallback) compEnabledCallback(compEnabled); }
 	void adjustCurrentItem(int delta) {
 		auto coarseMult = [](float fine) { return fine * 5.0f; };
 		switch (selection) {
@@ -143,13 +136,6 @@ private:
 				break;
 			case ITEM_FILTER_Q:
 				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, coarseMult(LOW_PASS_Q_STEP), [this]{ notifyFilterQChanged(); });
-				break;
-			case ITEM_COMP_ENABLED:
-				if (delta != 0) {
-					compEnabled = !compEnabled;
-					markDirty();
-					notifyCompressorEnabledChanged();
-				}
 				break;
 		}
 	}
@@ -169,13 +155,15 @@ private:
 	void drawMenu() {
 		u8g2.setFont(u8g2_font_6x12_tr);
 		static const char* const labels[ITEM_COUNT] = {
-			"Zoom","Delay ms","Delay fb",
-			"Filter Q","Comp on"
+			"Zoom",
+			"Delay ms",
+			"Delay fb",
+			"Filter Q"
 		};
 		const int rowHeight = 10;
 		const int highlightHeight = rowHeight + 2;
 		const int menuTop = 12;
-		uint8_t visible = 5; // number of visible items
+		uint8_t visible = ITEM_COUNT;
 		uint8_t firstIndex = 0;
 		if (ITEM_COUNT > visible) {
 			if (selection >= visible) {
@@ -207,7 +195,6 @@ private:
 				case ITEM_DELAY_TIME: snprintf(valbuf, sizeof(valbuf), "%.0fms", delayTimeMs); break;
 				case ITEM_DELAY_FEEDBACK: snprintf(valbuf, sizeof(valbuf), "%.2f", delayFeedback); break;
 				case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
-				case ITEM_COMP_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", compEnabled ? "On" : "Off"); break;
 			}
 			int vx = u8g2.getDisplayWidth() - (int)strlen(valbuf) * 6 - 4;
 			u8g2.drawStr(vx, baseline, valbuf);

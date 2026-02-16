@@ -23,14 +23,14 @@ int findButtonIndexForChannel(uint8_t channel) {
   return -1;
 }
 
-// kan dit niet gemerged worden met void Button::release?
+void Button::release() { 
+  latched = false; 
+  lastTriggerTime = 0; 
+}
+
 void releaseAllButtons() {
   for (int i = 0; i < BUTTON_COUNT; ++i) {
     buttons[i].release();
-
-    
   }
 }
-
-void Button::release() { latched = false; lastTriggerTime = 0; }
 

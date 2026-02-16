@@ -24,17 +24,14 @@ public:
 	virtual void setFilterQCallback(std::function<void(float)> cb) = 0;
 	virtual void setDelayTimeCallback(std::function<void(float)> cb) = 0;
 	virtual void setDelayFeedbackCallback(std::function<void(float)> cb) = 0;
-	virtual void setCompressorEnabledCallback(std::function<void(bool)> cb) = 0;
 
 	virtual float getZoom() const = 0;
 	virtual float getDelayTimeMs() const = 0;
 	virtual float getDelayFeedback() const = 0;
 	virtual float getFilterQ() const = 0;
-	virtual bool getCompressorEnabled() const = 0;
 	
 	virtual void setZoom(float zoom) = 0;
 	virtual void setDelayTimeMs(float ms) = 0;
 	virtual void setDelayFeedback(float feedback) = 0;
 	virtual void setFilterQ(float q) = 0;
-	virtual void setCompressorEnabled(bool enabled) = 0;
 };

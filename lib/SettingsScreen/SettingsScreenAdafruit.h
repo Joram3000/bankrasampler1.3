@@ -32,7 +32,6 @@ public:
     void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
     void setDelayTimeCallback(std::function<void(float)> cb) override { delayTimeCallback = cb; }
     void setDelayFeedbackCallback(std::function<void(float)> cb) override { delayFeedbackCallback = cb; }
-    void setCompressorEnabledCallback(std::function<void(bool)> cb) override { compEnabledCallback = cb; }
 
     void begin() override {}
 
@@ -75,13 +74,11 @@ public:
     float getDelayTimeMs() const override { return delayTimeMs; }
     float getDelayFeedback() const override { return delayFeedback; }
     float getFilterQ() const override { return filterQ; }
-    bool getCompressorEnabled() const override { return compEnabled; }
     
     void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
     void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
     void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
     void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
-    void setCompressorEnabled(bool enabled) override { compEnabled = enabled; markDirty(); notifyCompressorEnabledChanged(); }
 
 private:
     Adafruit_SSD1306 &gfx;
@@ -95,7 +92,6 @@ private:
     float delayTimeMs = DEFAULT_DELAY_TIME_MS;
     float delayFeedback = DEFAULT_DELAY_FEEDBACK;
     float filterQ = LOW_PASS_Q;
-    bool compEnabled = MASTER_COMPRESSOR_ENABLED;
 
     std::function<void(float)> zoomCallback;
     std::function<void(float)> filterCutoffCallback;
@@ -121,7 +117,6 @@ private:
     void notifyDelayTimeChanged() { if (delayTimeCallback) delayTimeCallback(delayTimeMs); }
     void notifyDelayFeedbackChanged() { if (delayFeedbackCallback) delayFeedbackCallback(delayFeedback); }
     void notifyFilterQChanged() { if (filterQCallback) filterQCallback(filterQ); }
-    void notifyCompressorEnabledChanged() { if (compEnabledCallback) compEnabledCallback(compEnabled); }
 
     void adjustCurrentItem(int delta) {
         auto coarseMult = [](float fine) { return fine * 5.0f; };
@@ -138,9 +133,7 @@ private:
             case ITEM_FILTER_Q:
                 applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, coarseMult(LOW_PASS_Q_STEP), [this]{ notifyFilterQChanged(); });
                 break;
-            case ITEM_COMP_ENABLED:
-                if (delta != 0) { compEnabled = !compEnabled; markDirty(); notifyCompressorEnabledChanged(); }
-                break;
+            
         }
     }
 
@@ -161,7 +154,7 @@ private:
         gfx.setTextSize(1);
         gfx.setTextColor(SSD1306_WHITE);
         static const char* const labels[ITEM_COUNT] = {
-            "Zoom","Delay ms","Delay fb","Filter Q","Comp on"
+            "Zoom","Delay ms","Delay fb","Filter Q"
         };
         const uint8_t visible = 5;
         const int rowHeight = 9;
@@ -199,7 +192,6 @@ private:
                 case ITEM_DELAY_TIME: snprintf(valbuf, sizeof(valbuf), "%.0fms", delayTimeMs); break;
                 case ITEM_DELAY_FEEDBACK: snprintf(valbuf, sizeof(valbuf), "%.2f", delayFeedback); break;
                 case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
-                case ITEM_COMP_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", compEnabled ? "On" : "Off"); break;
             }
             int16_t x1, y1;
             uint16_t w, h;

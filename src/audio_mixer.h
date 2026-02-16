@@ -87,7 +87,7 @@ private:
 
     float dryLevel = 0.9f;
     float sendLevel = 0.9f;
-    float wetLevel = 0.9f;
+    float wetLevel = 1.0f;
 
     AudioInfo audioInfo{44100, 2, 16};
     int sampleBytes = 2;

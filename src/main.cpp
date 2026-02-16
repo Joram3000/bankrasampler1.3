@@ -11,8 +11,8 @@
 #include "input/mux.h"
 #include "config/config.h"
 #include "config/settings.h"
-#include "initialization.h" 
 #include "SettingsScreen.h"
+
 
 // Audio system
 AudioInfo info(44100, 2, 16);
@@ -42,6 +42,7 @@ float smoothedCutoff = filterCutoff;
 // Forward declarations
 void playSample(int index);
 void stopSample(int index);
+static void initInputControls();
 
 
 void updateCutoff(float target) {
@@ -108,14 +109,9 @@ if(channel == SWITCH_CHANNEL_DELAY_SEND && active != switchDelaySendEnabled) {
 }
 
 void playSample(int index) {
-  if (index < 0 || index >= BUTTON_COUNT) return;
-  // If same sample already active, restart it
   currentSample = index;
-  
-  player.setPath(SAMPLE_PATHS[index]);
+    player.setPath(SAMPLE_PATHS[index]);
   player.setActive(true);
-  // String full = String(SAMPLE_PATHS[index]);
-  // currentSamplePath = full;
   if (DEBUGMODE) {
     Serial.print(F("PLAY: "));
     Serial.print(SAMPLE_PATHS[index]);
@@ -123,14 +119,12 @@ void playSample(int index) {
 }
 
 void stopSample(int index) {
-  if (index < 0 || index >= BUTTON_COUNT) return;
-  if (currentSample != index) return;
-  
-player.setActive(false);
-  if (DEBUGMODE) {
-    Serial.print(F("STOP: "));
-    Serial.print(SAMPLE_PATHS[index]);    
-  }
+  // if (currentSample != index) return;
+  // player.setActive(false);
+  // if (DEBUGMODE) {
+  //   Serial.print(F("STOP: "));
+  //   Serial.print(SAMPLE_PATHS[index]);    
+  // }
 }
 
 void initPlayer() {
@@ -156,7 +150,7 @@ void initAudio() {
   config.pin_data = I2S_PIN_DATA;
   config.i2s_format = I2S_STD_FORMAT; 
   config.buffer_count = 2;
-  config.buffer_size = 256;
+  config.buffer_size = 512;
 
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
@@ -176,7 +170,7 @@ void initAudio() {
   mixer.begin(scopeI2s, delayEffect1, info);
   initializationStep++;
   if(DEBUGMODE) {
-     Serial.print(initializationStep );
+    Serial.print(initializationStep);
     Serial.println("Audio initialized.");
   }
 }
@@ -189,11 +183,6 @@ void initDisplay() {
     // alternatief: zet een flag showUiAvailable = false en laat rest van init doorgaan
     return;
   } else {
-    auto* initScreen = getInitializationScreen();
-    setInitializationScreen(initScreen);
-    initializationStepper("Welkom");
-    delay(INIT_SCREEN_DURATION_MS);
-    initializationStepper("Display initialized");
     initializationStep++;
     if (DEBUGMODE) {
       Serial.print(initializationStep );
@@ -245,9 +234,9 @@ void checkPot(uint32_t now) {
   // update timestamp alleen als we daadwerkelijk gelezen hebben
   lastPotRead = now;
 }
+static void initInputControls() {
+  initSettingsModeSwitch();
 
-
-static void initSwitchStates() {
   // lees switches via muxGetChannelState (zie hieronder voor implementatie)
   bool filterState = readMuxActiveState(SWITCH_CHANNEL_FILTER_ENABLE);
   bool delayState  = readMuxActiveState(SWITCH_CHANNEL_DELAY_SEND);
@@ -279,25 +268,29 @@ static void initSwitchStates() {
   lastPotRead = millis();
 }
 
-
 void setup() {
   Serial.begin(115200);
   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
   
- 
+  // Initialization mode
   initDisplay();
+  // show screen with initialization steps
   initSd();
-  setMuxChangeCallback(onMuxChange); 
-  initMuxScanner(5000);
-  initAudio();
-  initPlayer();  
+  
   SettingsUiDependencies settingsDeps;
   settingsDeps.delayEffect = &delayEffect1;
   settingsDeps.filterEffect = &insertFilterL; 
   settingsDeps.releaseButtons = releaseAllButtons;
   initSettingsUi(settingsDeps);
-  initSettingsModeSwitch();
-  initSwitchStates();
+
+  setMuxChangeCallback(onMuxChange); 
+  initMuxScanner(5000);
+  initInputControls();
+
+
+  initAudio();
+  initPlayer();  
+  setOperatingMode(OperatingMode::Performance);
 }
 
 

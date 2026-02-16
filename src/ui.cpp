@@ -6,7 +6,6 @@
 #include <Wire.h>
 #include <algorithm>
 #include "SettingsScreen.h"
-#include "InitializationScreenU8g2.h"
 
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
   #include "SettingsScreenAdafruit.h"
@@ -50,15 +49,6 @@ static int waveformIndex = 0;
 
 ScopeI2SStream scopeI2s(waveformBuffer, &waveformIndex, scopeDisplay.getMutex());
 
-// Pointer to the initialization-screen instance owned by the UI module.
-// This is created during initUi() for the U8g2 backend and can be
-// retrieved by other modules using getInitializationScreen().
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-static InitializationScreenU8g2* g_initScreen = nullptr;
-#else
-static InitializationScreenU8g2* g_initScreen = nullptr; // forward declare for other backends
-#endif
-
 bool initUi() {
 #if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
   Serial.println(F("[UI] Using U8g2 display backend"));
@@ -69,18 +59,6 @@ bool initUi() {
     Serial.println(F("Display init failed"));
     return false;
   }
-  // Create and register the InitializationScreen for the active backend so
-  // other modules can retrieve it via getInitializationScreen(). We only
-  // allocate for the U8g2 backend, other backends will return nullptr.
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-  if (!g_initScreen) {
-    g_initScreen = new InitializationScreenU8g2(display);
-    g_initScreen->begin();
-    // Keep the screen inactive by default; callers can call enter() when they
-    // want to show it. We don't call enter() here so the normal flow can
-    // control when the welcome screen appears.
-  }
-#endif
   return true;
 }
 
@@ -132,61 +110,5 @@ ISettingsScreen* createSettingsScreen() {
 #endif
 }
 
-InitializationScreenU8g2* getInitializationScreen() {
-  return g_initScreen;
-}
 
-void uiShowSavingOverlay(uint16_t durationMs) {
-    const char* message = "Saving...";
-    auto drawU8g2 = [&]() {
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-        if (auto* d = getU8g2Display()) {
-            d->clearBuffer();
-            d->setFont(u8g2_font_6x12_tr);
-            int w = d->getDisplayWidth();
-            int h = d->getDisplayHeight();
-            int tw = d->getStrWidth(message);
-            int x = std::max(0, (w - tw) / 2);
-            int y = h / 2;
-            d->drawStr(x, y, message);
-            d->sendBuffer();
-        }
-#endif
-    };
 
-    auto drawAdafruit = [&]() {
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
-        if (auto* d = getAdafruitDisplay()) {
-            d->clearDisplay();
-            d->setTextSize(1);
-            d->setTextColor(SSD1306_WHITE);
-            int16_t x1, y1; uint16_t tw, th;
-            d->getTextBounds(message, 0, 0, &x1, &y1, &tw, &th);
-            int x = std::max(0, (static_cast<int>(d->width()) - static_cast<int>(tw)) / 2);
-            int y = std::max(0, (static_cast<int>(d->height()) - static_cast<int>(th)) / 2);
-            d->setCursor(x, y);
-            d->print(message);
-            d->display();
-        }
-#endif
-    };
-
-    if (auto mutexPtr = static_cast<SemaphoreHandle_t*>(getDisplayMutex())) {
-        if (xSemaphoreTake(*mutexPtr, pdMS_TO_TICKS(20)) == pdTRUE) {
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-            drawU8g2();
-#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
-            drawAdafruit();
-#endif
-            xSemaphoreGive(*mutexPtr);
-        }
-    } else {
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2_SSD1306
-        drawU8g2();
-#elif DISPLAY_DRIVER == DISPLAY_DRIVER_ADAFRUIT_SSD1306
-        drawAdafruit();
-#endif
-    }
-
-    if (durationMs > 0) delay(durationMs);
-}
