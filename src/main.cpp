@@ -118,13 +118,15 @@ void playSample(int index) {
     }
 }
 
+
 void stopSample(int index) {
-  // if (currentSample != index) return;
-  // player.setActive(false);
-  // if (DEBUGMODE) {
-  //   Serial.print(F("STOP: "));
-  //   Serial.print(SAMPLE_PATHS[index]);    
-  // }
+  if (auto ss = getSettingsScreen()) {
+    if (ss->getOneShot()) {
+      return;
+    }
+  }
+  if (currentSample != index) return;
+  player.setActive(false);
 }
 
 void initPlayer() {
