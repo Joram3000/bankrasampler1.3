@@ -28,12 +28,3 @@ constexpr uint8_t DISPLAY_I2C_ADDRESS = 0x3C;
 	#endif
 #endif
 
-// Initialization screen defaults (customize to change startup message and how
-// long the init animation should run)
-#ifndef INIT_SCREEN_MESSAGE
-#define INIT_SCREEN_MESSAGE "Opstarten..."
-#endif
-
-#ifndef INIT_SCREEN_DURATION_MS
-#define INIT_SCREEN_DURATION_MS 3000
-#endif

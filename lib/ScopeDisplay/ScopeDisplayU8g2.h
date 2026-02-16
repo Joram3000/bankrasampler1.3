@@ -8,7 +8,7 @@
 
 #include "config.h"
 
-      const bool useSmoothing = true; // deze moeten ook naar de settings dat is cool
+      const bool useSmoothing = false; // RAM besparen: smoothing uit
       const float smoothingAlpha = 0.6f; // deze ook naar settings 
 
 class ScopeDisplayU8g2 {
@@ -75,30 +75,17 @@ class ScopeDisplayU8g2 {
       // previous Y for main use (kept for compatibility with lastDisplayY)
       float prevYf = isfinite(lastDisplayY) ? lastDisplayY : NAN;
 
-      // Define overlay multipliers (keeps same drawing order as original)
+      // Minder overlays = minder RAM
       constexpr float overlayMultipliers[] = {
-        3.0f/3.0f, // full (3/3)
-        2.0f/3.0f, // 2/3
-        1.0f/3.0f, // 1/3
-        2.0f/4.0f, // 2/4
-        1.0f/4.0f, // 1/4
-        3.0f/4.0f,  // 3/4
-        4.0f/3.0f, // 4/3
-        5.0f/3.0f  // 5/3
+        1.0f,     // full
+        2.0f/3.0f,
+        1.0f/3.0f
       };
       constexpr int kNumOverlays = static_cast<int>(sizeof(overlayMultipliers) / sizeof(overlayMultipliers[0]));
 
       // prev Y states for each overlay
       float prevYs[kNumOverlays];
       for (int i = 0; i < kNumOverlays; ++i) prevYs[i] = NAN;
-
-      static constexpr int MAX_ECHO_COPIES = 5;
-      float prevYfEcho[MAX_ECHO_COPIES];
-      int prevXEcho[MAX_ECHO_COPIES];
-      for (int i = 0; i < MAX_ECHO_COPIES; ++i) {
-        prevYfEcho[i] = NAN;
-        prevXEcho[i] = -1;
-      }
 
       // Helper to draw one overlay given multiplier and prevY reference
       auto drawOverlay = [&](int x, float yValue, float &prevY) {
@@ -200,7 +187,7 @@ class ScopeDisplayU8g2 {
       xTaskCreatePinnedToCore(
         displayTaskImpl,
         "ScopeDisplayU8G2",
-        4096,
+        2048,
         this,
         1,
         &displayTaskHandle,

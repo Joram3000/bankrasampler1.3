@@ -226,7 +226,7 @@ class ScopeDisplay {
       xTaskCreatePinnedToCore(
         displayTaskImpl,      // Task functie
         "ScopeDisplay",       // Task naam
-        4096,                 // Stack size
+        2048,                 // Stack size
         this,                 // Parameter (this pointer)
         1,                    // Priority (lager dan audio)
         &displayTaskHandle,   // Task handle
