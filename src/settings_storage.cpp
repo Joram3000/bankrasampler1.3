@@ -36,6 +36,10 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
 			float z = line.substring(5).toFloat();
 			settingsScreen->setZoom(z);
 			Serial.printf("Loaded zoom=%f from settings\n", z);
+		} else if (line.startsWith("oneshot=")) {
+			bool os = line.substring(8).toInt() != 0;
+			settingsScreen->setOneShot(os);
+			Serial.printf("Loaded oneshot=%d from settings\n", os);
 		} else if (line.startsWith("delay_ms=")) {
 			float d = line.substring(9).toFloat();
 			settingsScreen->setDelayTimeMs(d);
@@ -64,6 +68,8 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
 	Serial.printf("Saving settings to SD card:\n");
 	Serial.printf(" zoom=%f\n", settingsScreen->getZoom());
 	f.printf("zoom=%f\n", settingsScreen->getZoom());
+		Serial.printf(" oneshot=%f\n", settingsScreen->getOneShot());
+	f.printf("oneshot=%f\n", settingsScreen->getOneShot());
 	Serial.printf(" delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
 	f.printf("delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
 	Serial.printf(" delay_fb=%.2f\n", settingsScreen->getDelayFeedback());

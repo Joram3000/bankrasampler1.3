@@ -17,6 +17,7 @@ public:
 
 	enum Item : uint8_t {
 		ITEM_ZOOM,
+		ITEM_ONE_SHOT,
 		ITEM_DELAY_TIME,
 		ITEM_DELAY_FEEDBACK,
 		ITEM_FILTER_Q,
@@ -25,11 +26,12 @@ public:
 
 	explicit SettingsScreenU8g2(U8G2 &display)
 		: u8g2(display) {}
-
+	
 	void setZoomCallback(std::function<void(float)> cb) override { zoomCallback = cb; }
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
 	void setDelayTimeCallback(std::function<void(float)> cb) override { delayTimeCallback = cb; }
 	void setDelayFeedbackCallback(std::function<void(float)> cb) override { delayFeedbackCallback = cb; }
+	void setOneShotCallback(std::function<void(bool)> cb) override { oneShotCallback = cb; }
 
 	void begin() override {}
 
@@ -90,10 +92,12 @@ public:
 	}
 
 	float getZoom() const override { return zoom; }
+	bool getOneShot() const override { return oneShot; }
 	float getDelayTimeMs() const override { return delayTimeMs; }
 	float getDelayFeedback() const override { return delayFeedback; }
 	float getFilterQ() const override { return filterQ; }
 	void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
+	void setOneShot(bool oneShot) override { this->oneShot = oneShot; markDirty(); if (oneShotCallback) oneShotCallback(oneShot); }
 	void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
 	void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
@@ -108,11 +112,13 @@ private:
 
 	float delayTimeMs = DEFAULT_DELAY_TIME_MS;
 	float delayDepth = DEFAULT_DELAY_DEPTH;
+	bool oneShot = false;
 	float delayFeedback = DEFAULT_DELAY_FEEDBACK;
 	float filterQ = LOW_PASS_Q;
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(float)> filterQCallback;
+	std::function<void(bool)> oneShotCallback;
 	std::function<void(float)> delayTimeCallback;
 	std::function<void(float)> delayFeedbackCallback;
 
@@ -127,6 +133,11 @@ private:
 		switch (selection) {
 			case ITEM_ZOOM:
 				applyAdjustment(zoom, delta, 0.2f, 12.0f, 0.1f, 0.5f, [this]{ notifyZoomChanged(); });
+				break;
+			case ITEM_ONE_SHOT:
+				if (delta != 0) {
+					setOneShot(!oneShot);
+				}
 				break;
 			case ITEM_DELAY_TIME:
 				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, DELAY_TIME_STEP_MS * 10.0f, [this]{ notifyDelayTimeChanged(); });
@@ -156,6 +167,7 @@ private:
 		u8g2.setFont(u8g2_font_6x12_tr);
 		static const char* const labels[ITEM_COUNT] = {
 			"Zoom",
+			"One Shot",
 			"Delay ms",
 			"Delay fb",
 			"Filter Q"
@@ -191,6 +203,7 @@ private:
 			u8g2.drawStr(4, baseline, labelBuf);
 			char valbuf[24];
 			switch (idx) {
+				case ITEM_ONE_SHOT: snprintf(valbuf, sizeof(valbuf), "%s", oneShot ? "On" : "Off"); break;
 				case ITEM_ZOOM: snprintf(valbuf, sizeof(valbuf), "%.1fx", zoom); break;
 				case ITEM_DELAY_TIME: snprintf(valbuf, sizeof(valbuf), "%.0fms", delayTimeMs); break;
 				case ITEM_DELAY_FEEDBACK: snprintf(valbuf, sizeof(valbuf), "%.2f", delayFeedback); break;

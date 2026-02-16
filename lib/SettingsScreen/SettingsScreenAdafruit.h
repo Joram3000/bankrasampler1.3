@@ -27,7 +27,7 @@ public:
 
     explicit SettingsScreenAdafruit(Adafruit_SSD1306 &display)
         : gfx(display) {}
-
+    void setOneShotCallback(std::function<void(bool)> cb) override { oneShotCallback = cb; }
     void setZoomCallback(std::function<void(float)> cb) override { zoomCallback = cb; }
     void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
     void setDelayTimeCallback(std::function<void(float)> cb) override { delayTimeCallback = cb; }
@@ -72,10 +72,12 @@ public:
     float getZoom() const override { return zoom; }
     
     float getDelayTimeMs() const override { return delayTimeMs; }
+    bool getOneShot() const override { return false; }
     float getDelayFeedback() const override { return delayFeedback; }
     float getFilterQ() const override { return filterQ; }
     
     void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
+    void setOneShot(bool oneShot) override {}
     void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
     void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
     void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
@@ -94,11 +96,12 @@ private:
     float filterQ = LOW_PASS_Q;
 
     std::function<void(float)> zoomCallback;
+    std::function<void(bool)> oneShotCallback;
     std::function<void(float)> filterCutoffCallback;
     std::function<void(float)> filterQCallback;
     std::function<void(float)> delayTimeCallback;
     std::function<void(float)> delayFeedbackCallback;
-    std::function<void(bool)> compEnabledCallback;
+
 
     void draw() {
         if (!active || !dirty) return;
@@ -154,7 +157,7 @@ private:
         gfx.setTextSize(1);
         gfx.setTextColor(SSD1306_WHITE);
         static const char* const labels[ITEM_COUNT] = {
-            "Zoom","Delay ms","Delay fb","Filter Q"
+            "Zoom", "One Shot", "Delay ms","Delay fb","Filter Q"
         };
         const uint8_t visible = 5;
         const int rowHeight = 9;
