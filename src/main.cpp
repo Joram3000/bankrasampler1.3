@@ -152,7 +152,7 @@ void initAudio() {
   config.pin_data = I2S_PIN_DATA;
   config.i2s_format = I2S_STD_FORMAT; 
   config.buffer_count = 2;
-  config.buffer_size = 512;
+  config.buffer_size = 256;
 
  if (!scopeI2s.begin(config)) {
     Serial.println(F("Fout: scopeI2s.begin(config) mislukt - I2S niet gestart"));
