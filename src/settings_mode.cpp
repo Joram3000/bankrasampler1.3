@@ -69,11 +69,14 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
 
   settingsScreen->setZoomCallback([](float zoomFactor) { setScopeHorizZoom(zoomFactor); });
   settingsScreen->setDelayTimeCallback([](float durationMs) {
-    currentDelayTimeMs = durationMs;
+    float clamped = durationMs;
+    if (clamped < DELAY_TIME_MIN_MS) clamped = DELAY_TIME_MIN_MS;
+    if (clamped > DELAY_TIME_MAX_MS) clamped = DELAY_TIME_MAX_MS;
+    currentDelayTimeMs = clamped;
     if (settingsDeps.delayEffect) {
-      settingsDeps.delayEffect->setDuration(static_cast<uint32_t>(durationMs));
+      settingsDeps.delayEffect->setDuration(static_cast<uint16_t>(clamped));
     }
-  });
+   });
   settingsScreen->setDelayFeedbackCallback([](float feedback) {
     currentDelayFeedback = feedback;
     if (settingsDeps.delayEffect) {

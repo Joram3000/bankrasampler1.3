@@ -1,16 +1,18 @@
 #pragma once
 
 #include <AudioTools.h>
+#include "prealloc_delay.h"
 #include <cstdint>
 #include <functional>
 
 class ISettingsScreen;
-// deze hoort er toch eigenlijk niet 
+
+
 enum class OperatingMode { Performance, Settings, Initializing };
 
 struct SettingsUiDependencies {
-  audio_tools::Delay* delayEffect = nullptr;
-  void* filterEffect = nullptr; // Can be LowPassFilter, HighPassFilter, or BandPassFilter<float>*
+  PreallocDelay* delayEffect = nullptr;
+  void* filterEffect = nullptr; // TODO: make editable as: LowPassFilter, HighPassFilter, or BandPassFilter<float>*
   std::function<void()> releaseButtons;
 };
 

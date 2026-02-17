@@ -4,6 +4,7 @@
 #include <AudioTools.h>
 #include "AudioTools/Disk/AudioSourceSD.h"
 #include "audio_mixer.h"
+#include "prealloc_delay.h"
 #include "input/button.h"
 #include "ui.h"
 #include "settings_storage.h"
@@ -12,7 +13,6 @@
 #include "config/config.h"
 #include "config/settings.h"
 #include "SettingsScreen.h"
-
 
 // Audio system
 AudioInfo info(44100, 2, 16);
@@ -27,7 +27,7 @@ AudioPlayer player(source, filteredStream, decoder);
 
 static LowPassFilter<float> insertFilterL;
 static LowPassFilter<float> insertFilterR;
-static Delay delayEffect1;
+static PreallocDelay delayEffect1;
 
 // State
 int initializationStep = 0;
@@ -163,11 +163,11 @@ void initAudio() {
   filteredStream.setFilter(0, &insertFilterL);
   filteredStream.setFilter(1, &insertFilterR);
 
-  delayEffect1.setSampleRate(info.sample_rate);
-  delayEffect1.setFeedback(DEFAULT_DELAY_FEEDBACK); 
-  delayEffect1.setDepth(DEFAULT_DELAY_DEPTH); 
-  delayEffect1.setDuration(DEFAULT_DELAY_TIME_MS);
-  delayEffect1.setActive(true);
+  delayEffect1.begin(info.sample_rate,
+                     static_cast<uint16_t>(DELAY_TIME_MAX_MS),
+                     static_cast<uint16_t>(DEFAULT_DELAY_TIME_MS),
+                     DEFAULT_DELAY_DEPTH,
+                     DEFAULT_DELAY_FEEDBACK);
 
   mixer.begin(scopeI2s, delayEffect1, info);
   initializationStep++;
@@ -274,9 +274,9 @@ void setup() {
   Serial.begin(115200);
   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
   
-  // Initialization mode
+
   initDisplay();
-  // show screen with initialization steps
+
   initSd();
   
   SettingsUiDependencies settingsDeps;

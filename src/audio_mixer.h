@@ -4,6 +4,7 @@
 #include <AudioTools.h>
 #include "AudioTools/CoreAudio/AudioEffects/AudioEffect.h"
 #include <AudioTools/AudioLibs/AudioEffectsSuite.h>
+#include "prealloc_delay.h"
 #include <cmath>
 #include <vector>
 
@@ -11,13 +12,13 @@ class DelayMixerStream : public ModifyingStream {
 public:
     DelayMixerStream() = default;
 
-    void begin(Print &out, Delay &delayRef1, AudioInfo info) {
+    void begin(Print &out, PreallocDelay &delayRef1, AudioInfo info) {
         setAudioInfo(info);
         setOutput(out);
         setDelay(delayRef1);
     }
 
-    void setDelay(Delay &d) {
+    void setDelay(PreallocDelay &d) {
         delay = &d;
         delay->setActive(true);
         if (audioInfo.sample_rate > 0) delay->setSampleRate(audioInfo.sample_rate);
@@ -83,7 +84,7 @@ void sendEnabled(bool enabled) {
     }
 
 private:
-    Delay *delay = nullptr;
+    PreallocDelay *delay = nullptr;
 
     float dryLevel = 0.9f;
     float sendLevel = 0.9f;
