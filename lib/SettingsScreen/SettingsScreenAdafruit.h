@@ -22,6 +22,7 @@ public:
         ITEM_DELAY_FEEDBACK,
         ITEM_FILTER_Q,
         ITEM_COMP_ENABLED,
+        ITEM_ONE_SHOT,
         ITEM_COUNT
     };
 
@@ -70,9 +71,8 @@ public:
     }
 
     float getZoom() const override { return zoom; }
-    
-    float getDelayTimeMs() const override { return delayTimeMs; }
-    bool getOneShot() const override { return false; }
+        float getDelayTimeMs() const override { return delayTimeMs; }
+    bool getOneShot() const override { return oneShot ; }
     float getDelayFeedback() const override { return delayFeedback; }
     float getFilterQ() const override { return filterQ; }
     
@@ -94,6 +94,7 @@ private:
     float delayTimeMs = DEFAULT_DELAY_TIME_MS;
     float delayFeedback = DEFAULT_DELAY_FEEDBACK;
     float filterQ = LOW_PASS_Q;
+    bool oneShot = ONE_SHOT_DEFAULT;
 
     std::function<void(float)> zoomCallback;
     std::function<void(bool)> oneShotCallback;
@@ -126,6 +127,13 @@ private:
         switch (selection) {
             case ITEM_ZOOM:
                 applyAdjustment(zoom, delta, 0.1f, 12.0f, 0.1f, 0.5f, [this]{ notifyZoomChanged(); });
+                break;
+            case ITEM_ONE_SHOT:
+                if (delta != 0) {
+                    oneShot = !oneShot;
+                    markDirty();
+                    if (oneShotCallback) oneShotCallback(oneShot);
+                }
                 break;
             case ITEM_DELAY_TIME:
                 applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, DELAY_TIME_STEP_MS * 10.0f, [this]{ notifyDelayTimeChanged(); });

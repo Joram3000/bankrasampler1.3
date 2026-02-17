@@ -64,12 +64,11 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
 		Serial.println("Failed to open settings file for write");
 		return;
 	}
-	// print all the settings to Serial and to file
 	Serial.printf("Saving settings to SD card:\n");
 	Serial.printf(" zoom=%f\n", settingsScreen->getZoom());
 	f.printf("zoom=%f\n", settingsScreen->getZoom());
-		Serial.printf(" oneshot=%f\n", settingsScreen->getOneShot());
-	f.printf("oneshot=%f\n", settingsScreen->getOneShot());
+    Serial.printf(" oneshot=%d\n", settingsScreen->getOneShot() ? 1 : 0);
+    f.printf("oneshot=%d\n", settingsScreen->getOneShot() ? 1 : 0);
 	Serial.printf(" delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
 	f.printf("delay_ms=%.0f\n", settingsScreen->getDelayTimeMs());
 	Serial.printf(" delay_fb=%.2f\n", settingsScreen->getDelayFeedback());

@@ -25,3 +25,5 @@ constexpr float LOW_PASS_MAX_HZ    = 4500.0f;
 constexpr float LOW_PASS_Q_MIN      = 0.1f;
 constexpr float LOW_PASS_Q_MAX      = 1.0f;
 constexpr float LOW_PASS_Q_STEP     = 0.05f;
+
+constexpr bool ONE_SHOT_DEFAULT = false;
