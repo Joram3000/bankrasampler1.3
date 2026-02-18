@@ -8,7 +8,7 @@
 
 #include "config/settings.h"
 #include "SettingsScreen.h"
-
+#include "BpmTap/BpmTap.h"
 // A trimmed-down Adafruit-based settings screen that exposes the same
 // user-editable items as the U8g2 implementation. Kept minimal so the
 // settings storage only needs to handle a small set of keys.
@@ -46,11 +46,18 @@ public:
         if (!active) return false;
         switch (b) {
             case Button::Ok:
-                editing = !editing;
-                markDirty();
+            
+            Serial.println("OK button pressed");
                 return true;
-            case Button::Back:
-                if (editing) { editing = false; markDirty(); }
+            case Button::Tap:
+              bpmTap.tap();
+				 {
+                    float avg = bpmTap.getAverageInterval(); 
+                    if (avg > 0) {
+                        tappedIntervalMs = avg;
+                        setDelayTimeMs(tappedIntervalMs + 0.5f);
+                    }
+                }
                 return true;
             case Button::Up:
                 if (editing) adjustCurrentItem(+1);
@@ -71,7 +78,7 @@ public:
     }
 
     float getZoom() const override { return zoom; }
-        float getDelayTimeMs() const override { return delayTimeMs; }
+    float getDelayTimeMs() const override { return delayTimeMs; }
     bool getOneShot() const override { return oneShot ; }
     float getDelayFeedback() const override { return delayFeedback; }
     float getFilterQ() const override { return filterQ; }
@@ -89,8 +96,9 @@ private:
     bool dirty = true;
     unsigned long lastDrawMs = 0;
     uint8_t selection = 0;
-    
-    float zoom = DEFAULT_HORIZ_ZOOM;
+    BpmTap bpmTap;
+	float tappedIntervalMs = 0; // gemiddelde interval in ms (0 = nog niet genoeg taps)
+        float zoom = DEFAULT_HORIZ_ZOOM;
     float delayTimeMs = DEFAULT_DELAY_TIME_MS;
     float delayFeedback = DEFAULT_DELAY_FEEDBACK;
     float filterQ = LOW_PASS_Q;
@@ -123,10 +131,9 @@ private:
     void notifyFilterQChanged() { if (filterQCallback) filterQCallback(filterQ); }
 
     void adjustCurrentItem(int delta) {
-        auto coarseMult = [](float fine) { return fine * 5.0f; };
         switch (selection) {
             case ITEM_ZOOM:
-                applyAdjustment(zoom, delta, 0.1f, 12.0f, 0.1f, 0.5f, [this]{ notifyZoomChanged(); });
+                applyAdjustment(zoom, delta, 0.1f, 12.0f, 0.1f, [this]{ notifyZoomChanged(); });
                 break;
             case ITEM_ONE_SHOT:
                 if (delta != 0) {
@@ -136,24 +143,22 @@ private:
                 }
                 break;
             case ITEM_DELAY_TIME:
-                applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, DELAY_TIME_STEP_MS * 10.0f, [this]{ notifyDelayTimeChanged(); });
+                applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, [this]{ notifyDelayTimeChanged(); });
                 break;
             case ITEM_DELAY_FEEDBACK:
-                applyAdjustment(delayFeedback, delta, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX, DELAY_FEEDBACK_STEP, coarseMult(DELAY_FEEDBACK_STEP), [this]{ notifyDelayFeedbackChanged(); });
+                applyAdjustment(delayFeedback, delta, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX, DELAY_FEEDBACK_STEP, [this]{ notifyDelayFeedbackChanged(); });
                 break;
             case ITEM_FILTER_Q:
-                applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, coarseMult(LOW_PASS_Q_STEP), [this]{ notifyFilterQChanged(); });
+                applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, [this]{ notifyFilterQChanged(); });
                 break;
             
-        }
-    }
-
+         }
+     }
+ 
     void applyAdjustment(float &value, int delta, float minVal, float maxVal,
-                         float fineStep, float coarseStep,
+                         float step,
                          const std::function<void(void)> &notifier) {
         if (delta == 0) return;
-        bool coarse = (delta >= 10) || (delta <= -10);
-        float step = coarse ? coarseStep : fineStep;
         float direction = (delta > 0) ? 1.0f : -1.0f;
         value = clampValue(value + step * direction, minVal, maxVal);
         markDirty();

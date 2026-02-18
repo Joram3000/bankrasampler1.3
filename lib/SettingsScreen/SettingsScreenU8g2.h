@@ -8,8 +8,7 @@
 
 #include "config/settings.h"
 #include "SettingsScreen.h"
-
-
+#include "BpmTap/BpmTap.h"
 
 class SettingsScreenU8g2 : public ISettingsScreen {
 public:
@@ -53,43 +52,42 @@ public:
 	void update() override { draw(); }
 
 	bool onButton(Button b) override {
-		if (!active) return false;
-		switch(b) {
-			case Button::Ok:
-				editing = !editing;
+        if (!active) return false;
+        switch(b) {
+            case Button::Ok:
+				Serial.println("SettingsScreen: OK button pressed, ");
+                 return true;
+            case Button::Tap:
+                bpmTap.tap();
+              				 {
+                    float avg = bpmTap.getAverageInterval(); 
+                    if (avg > 0) {
+                        tappedIntervalMs = avg;
+                        setDelayTimeMs(tappedIntervalMs + 0.5f);
+                    }
+                }
+                 return true;
+            case Button::Up:
+				// Up: move selection up
+				if (selection == 0) selection = ITEM_COUNT - 1; else --selection;
 				markDirty();
-				return true;
-			case Button::Back:
-				if (editing) {
-					editing = false;
-					markDirty();
-				}
-				return true;
-			case Button::Up:
-				if (editing) {
-					adjustCurrentItem(+1);
-				} else {
-					if (selection == 0) selection = ITEM_COUNT - 1; else --selection;
-					markDirty();
-				}
-				return true;
-			case Button::Down:
-				if (editing) {
-					adjustCurrentItem(-1);
-				} else {
-					selection = (selection + 1) % ITEM_COUNT;
-					markDirty();
-				}
-				return true;
-			case Button::Left:
-				if (editing) adjustCurrentItem(-10);
-				return true;
-			case Button::Right:
-				if (editing) adjustCurrentItem(+10);
-				return true;
-		}
-		return false;
-	}
+                 return true;
+            case Button::Down:
+				// Down: move selection down
+				selection = (selection + 1) % ITEM_COUNT;
+				markDirty();
+                 return true;
+            case Button::Left:
+				// Left: adjust selected item (small step)
+				adjustCurrentItem(-1);
+                 return true;
+            case Button::Right:
+				// Right: adjust selected item (small step)
+				adjustCurrentItem(+1);
+                 return true;
+        }
+        return false;
+    }
 
 	float getZoom() const override { return zoom; }
 	bool getOneShot() const override { return oneShot; }
@@ -102,16 +100,17 @@ public:
 	void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
 private:
-	U8G2 &u8g2;
-	bool active = false;
-	bool editing = false;
-	float zoom = DEFAULT_HORIZ_ZOOM;
-	bool dirty = true;
-	unsigned long lastDrawMs = 0;
-	uint8_t selection = 0;
+    U8G2 &u8g2;
+    bool active = false;
+    // bool editing = false;
+    BpmTap bpmTap;
+	unsigned long tappedIntervalMs = 0;
+    float zoom = DEFAULT_HORIZ_ZOOM;
+    bool dirty = true;
+    unsigned long lastDrawMs = 0;
+    uint8_t selection = 0;
 
 	float delayTimeMs = DEFAULT_DELAY_TIME_MS;
-	float delayDepth = DEFAULT_DELAY_DEPTH;
 	bool oneShot = false;
 	float delayFeedback = DEFAULT_DELAY_FEEDBACK;
 	float filterQ = LOW_PASS_Q;
@@ -123,40 +122,37 @@ private:
 	std::function<void(float)> delayFeedbackCallback;
 
 	void markDirty() { dirty = true; }
-
 	void notifyZoomChanged() { if (zoomCallback) zoomCallback(zoom); }
 	void notifyDelayTimeChanged() { if (delayTimeCallback) delayTimeCallback(delayTimeMs); }
 	void notifyDelayFeedbackChanged() { if (delayFeedbackCallback) delayFeedbackCallback(delayFeedback); }
 	void notifyFilterQChanged() { if (filterQCallback) filterQCallback(filterQ); }
 	void adjustCurrentItem(int delta) {
-		auto coarseMult = [](float fine) { return fine * 5.0f; };
+		
 		switch (selection) {
 			case ITEM_ZOOM:
-				applyAdjustment(zoom, delta, 0.2f, 12.0f, 0.1f, 0.5f, [this]{ notifyZoomChanged(); });
+				applyAdjustment(zoom, delta, 0.2f, 12.0f, 0.1f, [this]{ notifyZoomChanged(); });
 				break;
-			case ITEM_ONE_SHOT:
-				if (delta != 0) {
-					setOneShot(!oneShot);
-				}
-				break;
-			case ITEM_DELAY_TIME:
-				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, DELAY_TIME_STEP_MS * 10.0f, [this]{ notifyDelayTimeChanged(); });
-				break;
-			case ITEM_DELAY_FEEDBACK:
-				applyAdjustment(delayFeedback, delta, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX, DELAY_FEEDBACK_STEP, coarseMult(DELAY_FEEDBACK_STEP), [this]{ notifyDelayFeedbackChanged(); });
-				break;
-			case ITEM_FILTER_Q:
-				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, coarseMult(LOW_PASS_Q_STEP), [this]{ notifyFilterQChanged(); });
-				break;
-		}
-	}
-
+             case ITEM_ONE_SHOT:
+                 if (delta != 0) {
+                     setOneShot(!oneShot);
+                 }
+                 break;
+             case ITEM_DELAY_TIME:
+				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, [this]{ notifyDelayTimeChanged(); });
+                 break;
+             case ITEM_DELAY_FEEDBACK:
+				applyAdjustment(delayFeedback, delta, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX, DELAY_FEEDBACK_STEP, [this]{ notifyDelayFeedbackChanged(); });
+                 break;
+             case ITEM_FILTER_Q:
+				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, [this]{ notifyFilterQChanged(); });
+                 break;
+         }
+     }
+ 
 	void applyAdjustment(float &value, int delta, float minVal, float maxVal,
-					     float fineStep, float coarseStep,
+					     float step,
 					     const std::function<void(void)> &notifier) {
 		if (delta == 0) return;
-		bool coarse = (delta >= 10) || (delta <= -10);
-		float step = coarse ? coarseStep : fineStep;
 		float direction = (delta > 0) ? 1.0f : -1.0f;
 		value = clampValue(value + step * direction, minVal, maxVal);
 		markDirty();
@@ -195,17 +191,16 @@ private:
 				u8g2.setDrawColor(1);
 			}
 			char labelBuf[24];
-			if (editing && idx == selection) {
-				snprintf(labelBuf, sizeof(labelBuf), "* %s", labels[idx]);
-			} else {
-				snprintf(labelBuf, sizeof(labelBuf), "  %s", labels[idx]);
-			}
-			u8g2.drawStr(4, baseline, labelBuf);
+			
+		
+			snprintf(labelBuf, sizeof(labelBuf), labels[idx]); 
+			
+             u8g2.drawStr(4, baseline, labelBuf);
 			char valbuf[24];
 			switch (idx) {
 				case ITEM_ONE_SHOT: snprintf(valbuf, sizeof(valbuf), "%s", oneShot ? "On" : "Off"); break;
 				case ITEM_ZOOM: snprintf(valbuf, sizeof(valbuf), "%.1fx", zoom); break;
-				case ITEM_DELAY_TIME: snprintf(valbuf, sizeof(valbuf), "%.0fms", delayTimeMs); break;
+				case ITEM_DELAY_TIME: snprintf(valbuf, sizeof(valbuf), "%.0fms", delayTimeMs); break; //
 				case ITEM_DELAY_FEEDBACK: snprintf(valbuf, sizeof(valbuf), "%.2f", delayFeedback); break;
 				case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
 			}

@@ -7,7 +7,7 @@
 #include <cmath>
 
 #include "config.h"
-
+#include "storage/logo.h" 
 
 class ScopeDisplayU8g2 {
   private:
@@ -40,17 +40,21 @@ class ScopeDisplayU8g2 {
 
     void displayLoop() {
       for (;;) {
+        // When suspended, sleep a bit so we don't spin and starve other tasks.
         if (suspended) {
           vTaskDelay(40 / portTICK_PERIOD_MS);
           continue;
         }
-        if (xSemaphoreTake(displayMutex, portMAX_DELAY)) {
+
+        if (displayMutex != NULL && xSemaphoreTake(displayMutex, portMAX_DELAY) == pdTRUE) {
           display->clearBuffer();
           renderWaveform();
-      
+    
           display->sendBuffer();
           xSemaphoreGive(displayMutex);
         }
+
+        // throttle update rate
         vTaskDelay(40 / portTICK_PERIOD_MS);
       }
     }
@@ -153,8 +157,17 @@ class ScopeDisplayU8g2 {
 
     void setSuspended(bool value) {
       suspended = value;
+      // when resuming, give display a clean clear so splash/overlays don't remain
       if (!value) {
-        lastDisplayY = NAN;
+        if (displayMutex != NULL && xSemaphoreTake(displayMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+          display->clearBuffer();
+          display->sendBuffer();
+          xSemaphoreGive(displayMutex);
+        } else {
+          // best-effort fallback
+          display->clearBuffer();
+          display->sendBuffer();
+        }
       }
     }
 
@@ -188,7 +201,7 @@ class ScopeDisplayU8g2 {
       xTaskCreatePinnedToCore(
         displayTaskImpl,
         "ScopeDisplayU8G2",
-        2048,
+        4096,   
         this,
         1,
         &displayTaskHandle,

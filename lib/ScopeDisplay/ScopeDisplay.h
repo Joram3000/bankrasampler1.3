@@ -9,7 +9,6 @@
 #include <cmath>
 #include "config/settings.h"
 #include "config/screen.h"
-// #include "config.h"
 
 /**
  * ScopeDisplay - Beheert OLED display met oscilloscope visualisatie
@@ -214,13 +213,11 @@ class ScopeDisplay {
         return false;
       }
       
-
-      
       // Start display task op core 0 (audio blijft op core 1)
       xTaskCreatePinnedToCore(
         displayTaskImpl,      // Task functie
         "ScopeDisplay",       // Task naam
-        2048,                 // Stack size
+        4096,                 // Stack size
         this,                 // Parameter (this pointer)
         1,                    // Priority (lager dan audio)
         &displayTaskHandle,   // Task handle
