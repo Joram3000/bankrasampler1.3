@@ -32,3 +32,6 @@ void setScopeDisplaySuspended(bool suspended);
 class ISettingsScreen; // forward
 ISettingsScreen* createSettingsScreen();
 
+// Toon splash/logo en blokkeer scope-updates totdat hideSplash() wordt aangeroepen.
+void showSplash();
+void hideSplash();

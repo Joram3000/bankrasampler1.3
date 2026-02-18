@@ -7,7 +7,7 @@
 #include "prealloc_delay.h"
 #include "input/button.h"
 #include "ui.h"
-#include "settings_storage.h"
+#include "storage/settings_storage.h"
 #include "settings_mode.h"
 #include "input/mux.h"
 #include "config/config.h"
@@ -166,7 +166,6 @@ void initAudio() {
   delayEffect1.begin(info.sample_rate,
                      static_cast<uint16_t>(DELAY_TIME_MAX_MS),
                      static_cast<uint16_t>(DEFAULT_DELAY_TIME_MS),
-                     DEFAULT_DELAY_DEPTH,
                      DEFAULT_DELAY_FEEDBACK);
 
   mixer.begin(scopeI2s, delayEffect1, info);
@@ -177,17 +176,14 @@ void initAudio() {
   }
 }
 
-void initDisplay() {
-  if (!initUi()) {
-    // oude code: for(;;);
-    // Niet blokkeren: log en ga in veilige modus (geen display), of retry a-synchroon.
-    Serial.println(F("Display init failed, continuing without UI"));
-    // alternatief: zet een flag showUiAvailable = false en laat rest van init doorgaan
-    return;
+void InitDisplay() {
+    if (!initUi()) {
+    Serial.println(F("Display init failed"));
   } else {
+    showSplash();
     initializationStep++;
     if (DEBUGMODE) {
-      Serial.print(initializationStep );
+      Serial.print(initializationStep);
       Serial.println("Display initialized.");
     }
   }
@@ -273,26 +269,22 @@ static void initInputControls() {
 void setup() {
   Serial.begin(115200);
   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
-  
 
-  initDisplay();
-
+  InitDisplay();  
   initSd();
-  
+  setMuxChangeCallback(onMuxChange);
+  initMuxScanner(5000);
+  initInputControls();
+  initAudio();
+  initPlayer();
+
   SettingsUiDependencies settingsDeps;
   settingsDeps.delayEffect = &delayEffect1;
-  settingsDeps.filterEffect = &insertFilterL; 
+  settingsDeps.filterEffect = &insertFilterL;
   settingsDeps.releaseButtons = releaseAllButtons;
   initSettingsUi(settingsDeps);
 
-  setMuxChangeCallback(onMuxChange); 
-  initMuxScanner(5000);
-  initInputControls();
-
-
-  initAudio();
-  initPlayer();  
-  setOperatingMode(OperatingMode::Performance);
+  hideSplash();
 }
 
 
@@ -300,6 +292,7 @@ void setup() {
 void loop() {
   uint32_t now = millis();
   size_t copied = player.copy();
+  
     if (!player.isActive()) {
        mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
     }
