@@ -214,13 +214,7 @@ class ScopeDisplay {
         return false;
       }
       
-      // Toon startup bericht
-      display->clearDisplay();
-      display->setTextSize(1);
-      display->setTextColor(SSD1306_WHITE);
-      display->setCursor(0, 0);
-      display->println("Initializing...");
-      display->display();
+
       
       // Start display task op core 0 (audio blijft op core 1)
       xTaskCreatePinnedToCore(

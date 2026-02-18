@@ -1,7 +1,7 @@
 #include "settings_mode.h"
 #include "config/config.h"
 #include "config/settings.h"
-#include "settings_storage.h"
+#include "storage/settings_storage.h"
 #include "ui.h"
 #include "SettingsScreen.h"
 
@@ -10,7 +10,7 @@
 
 namespace {
 ISettingsScreen* settingsScreen = nullptr;
-OperatingMode currentMode = OperatingMode::Initializing;
+OperatingMode currentMode = OperatingMode::Performance;
 
 // Persisted settings state (used to seed UI on boot)
 float currentFilterQ = LOW_PASS_Q;
@@ -32,13 +32,7 @@ void applyOperatingModeChange(OperatingMode newMode) {
   }
   if (newMode == currentMode) return;
 
-  if (newMode == OperatingMode::Initializing) {
-    setScopeDisplaySuspended(true);
-  } else {
-    if (currentMode == OperatingMode::Initializing) {
-    }
-
-    if (newMode == OperatingMode::Settings) {
+  if (newMode == OperatingMode::Settings) {
       setScopeDisplaySuspended(true);
       if (settingsScreen) settingsScreen->enter();
       if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
@@ -50,7 +44,7 @@ void applyOperatingModeChange(OperatingMode newMode) {
         saveSettingsToSd(settingsScreen);
       }
     }
-  }
+  
 
   currentMode = newMode;
 }
@@ -103,9 +97,7 @@ void initSettingsModeSwitch() {
   pinMode(SWITCH_PIN_SETTINGS_MODE, INPUT);
   bool settingsModeInit = (digitalRead(SWITCH_PIN_SETTINGS_MODE) == LOW);
   settingsModeRawState = settingsModeDebouncedState = settingsModeInit;
-  if (currentMode != OperatingMode::Initializing) {
-    applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
-  }
+  applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
 
   if (DEBUGMODE) {
     Serial.print("Settings mode switch initialized to: ");
@@ -125,9 +117,7 @@ void checkSettingsMode(uint32_t now) {
 
   if ((now - settingsModeLastDebounceTime) >= SETTINGS_DEBOUNCE_MS && settingsModeDebouncedState != settingsModeRawState) {
     settingsModeDebouncedState = settingsModeRawState;
-    if (currentMode != OperatingMode::Initializing) {
-      applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
-    }
+    applyOperatingModeChange(settingsModeDebouncedState ? OperatingMode::Settings : OperatingMode::Performance);
     if (DEBUGMODE) {
       Serial.print(F("Settings mode -> "));
       Serial.println(settingsModeDebouncedState ? F("ON") : F("OFF"));
@@ -156,7 +146,7 @@ bool handleSettingsButtonInput(size_t buttonIndex, bool active) {
 
   ISettingsScreen::Button mapped;
   switch (buttonIndex) {
-    case 0: mapped = ISettingsScreen::Button::Back; break;
+    case 0: mapped = ISettingsScreen::Button::Tap; break;
     case 1: mapped = ISettingsScreen::Button::Up; break;
     case 2: mapped = ISettingsScreen::Button::Ok; break;
     case 3: mapped = ISettingsScreen::Button::Left; break;

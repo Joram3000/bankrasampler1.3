@@ -8,7 +8,7 @@
 class ISettingsScreen;
 
 
-enum class OperatingMode { Performance, Settings, Initializing };
+enum class OperatingMode { Performance, Settings };
 
 struct SettingsUiDependencies {
   PreallocDelay* delayEffect = nullptr;

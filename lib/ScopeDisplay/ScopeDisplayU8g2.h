@@ -8,21 +8,22 @@
 
 #include "config.h"
 
-      const bool useSmoothing = false; // RAM besparen: smoothing uit
-      const float smoothingAlpha = 0.6f; // deze ook naar settings 
 
 class ScopeDisplayU8g2 {
   private:
-    U8G2* display;
+  U8G2* display;
   TaskHandle_t displayTaskHandle;
   SemaphoreHandle_t displayMutex;
   volatile bool suspended = false;
-
-    int16_t* waveformBuffer;
-    int* waveformIndex;
-    int waveformSamples;
-
-    float horizZoom = DEFAULT_HORIZ_ZOOM;
+  
+  int16_t* waveformBuffer;
+  int* waveformIndex;
+  int waveformSamples;
+  
+  const bool useSmoothing = false; // naar settings?
+  const float smoothingAlpha = 0.2f;// kan weg?
+  
+  float horizZoom = DEFAULT_HORIZ_ZOOM;
     float vertScale = DEFAULT_VERT_SCALE;
     float lastDisplayY = NAN;
 

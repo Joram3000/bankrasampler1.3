@@ -2,10 +2,9 @@
 
 // zoom screen defaults
 constexpr float DEFAULT_HORIZ_ZOOM = 0.2f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
-constexpr float DEFAULT_VERT_SCALE = 1.0f; // amplitude schaal factor
+constexpr float DEFAULT_VERT_SCALE = 1.0f; // amplitude schaal factor // zou ook naar settings kunnen 
 
-constexpr float DEFAULT_DELAY_TIME_MS    = 333.0f;
-constexpr float DEFAULT_DELAY_DEPTH      = 0.333f;
+constexpr float DEFAULT_DELAY_TIME_MS = 100.0f;
 constexpr float DEFAULT_DELAY_FEEDBACK   = 0.8f;
 
 constexpr float DELAY_TIME_MIN_MS        = 50.0f;

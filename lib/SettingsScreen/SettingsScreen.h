@@ -9,7 +9,7 @@
 class ISettingsScreen {
 public:
 	// Logical button roles shared by the physical button mapper.
-	enum class Button : uint8_t { Back = 0, Up = 1, Ok = 2, Left = 3, Down = 4, Right = 5 };
+	enum class Button : uint8_t { Tap = 0, Up = 1, Ok = 2, Left = 3, Down = 4, Right = 5 };
 
 	virtual ~ISettingsScreen() = default;
 
