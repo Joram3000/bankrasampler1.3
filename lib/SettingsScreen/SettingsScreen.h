@@ -24,7 +24,14 @@ public:
 	virtual void setOneShotCallback(std::function<void(bool)> cb) = 0;
 	virtual void setFilterQCallback(std::function<void(float)> cb) = 0;
 	virtual void setDelayTimeCallback(std::function<void(float)> cb) = 0;
+	
 	virtual void setDelayFeedbackCallback(std::function<void(float)> cb) = 0;
+	virtual void setFeedbackLowpassCutoffCallback(std::function<void(float)> cb) = 0;
+	virtual void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) = 0;
+
+	// Get current feedback filter cutoff values (UI -> persistence)
+	virtual float getFeedbackLowpassCutoff() const = 0;
+	virtual float getFeedbackHighpassCutoff() const = 0;
 
 	virtual float getZoom() const = 0;
 	virtual bool getOneShot() const = 0;
@@ -35,6 +42,9 @@ public:
 	virtual void setZoom(float zoom) = 0;
 	virtual void setOneShot(bool oneShot) = 0;
 	virtual void setDelayTimeMs(float ms) = 0;
-	virtual void setDelayFeedback(float feedback) = 0;
 	virtual void setFilterQ(float q) = 0;
+
+	virtual void setDelayFeedback(float feedback) = 0;
+	virtual void setFeedbackLowpassCutoff(float hz) = 0;
+	virtual void setFeedbackHighpassCutoff(float hz) = 0;
 };

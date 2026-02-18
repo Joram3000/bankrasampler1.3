@@ -21,6 +21,8 @@ public:
         ITEM_DELAY_TIME,
         ITEM_DELAY_FEEDBACK,
         ITEM_FILTER_Q,
+        ITEM_FB_HIGHPASS,
+        ITEM_FB_LOWPASS,
         ITEM_COMP_ENABLED,
         ITEM_ONE_SHOT,
         ITEM_COUNT
@@ -33,6 +35,8 @@ public:
     void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
     void setDelayTimeCallback(std::function<void(float)> cb) override { delayTimeCallback = cb; }
     void setDelayFeedbackCallback(std::function<void(float)> cb) override { delayFeedbackCallback = cb; }
+    void setFeedbackLowpassCutoffCallback(std::function<void(float)> cb) override { feedbackLowpassCutoffCallback = cb; }
+    void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) override { feedbackHighpassCutoffCallback = cb; }
 
     void begin() override {}
 
@@ -82,12 +86,16 @@ public:
     bool getOneShot() const override { return oneShot ; }
     float getDelayFeedback() const override { return delayFeedback; }
     float getFilterQ() const override { return filterQ; }
+    float getFeedbackLowpassCutoff() const override { return feedbackLowpassCutoff; }
+    float getFeedbackHighpassCutoff() const override { return feedbackHighpassCutoff; }
     
     void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
     void setOneShot(bool oneShot) override {}
     void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
     void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
     void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
+    void setFeedbackLowpassCutoff(float hz) override { feedbackLowpassCutoff = clampValue(hz, FB_LOW_PASS_MIN_HZ, FB_LOW_PASS_MAX_HZ); markDirty(); if (feedbackLowpassCutoffCallback) feedbackLowpassCutoffCallback(feedbackLowpassCutoff); }
+    void setFeedbackHighpassCutoff(float hz) override { feedbackHighpassCutoff = clampValue(hz, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ); markDirty(); if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); }
 
 private:
     Adafruit_SSD1306 &gfx;
@@ -102,6 +110,8 @@ private:
     float delayTimeMs = DEFAULT_DELAY_TIME_MS;
     float delayFeedback = DEFAULT_DELAY_FEEDBACK;
     float filterQ = LOW_PASS_Q;
+    float feedbackHighpassCutoff = FB_HIGH_PASS_CUTOFF_HZ;
+    float feedbackLowpassCutoff = FB_LOW_PASS_CUTOFF_HZ;
     bool oneShot = ONE_SHOT_DEFAULT;
 
     std::function<void(float)> zoomCallback;
@@ -110,6 +120,8 @@ private:
     std::function<void(float)> filterQCallback;
     std::function<void(float)> delayTimeCallback;
     std::function<void(float)> delayFeedbackCallback;
+    std::function<void(float)> feedbackLowpassCutoffCallback;
+    std::function<void(float)> feedbackHighpassCutoffCallback;
 
 
     void draw() {
@@ -151,6 +163,12 @@ private:
             case ITEM_FILTER_Q:
                 applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, [this]{ notifyFilterQChanged(); });
                 break;
+            case ITEM_FB_HIGHPASS:
+                applyAdjustment(feedbackHighpassCutoff, delta, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ, 50.0f, [this]{ if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); });
+                break;
+            case ITEM_FB_LOWPASS:
+                applyAdjustment(feedbackLowpassCutoff, delta, FB_LOW_PASS_MIN_HZ, FB_LOW_PASS_MAX_HZ, 100.0f, [this]{ if (feedbackLowpassCutoffCallback) feedbackLowpassCutoffCallback(feedbackLowpassCutoff); });
+                break;
             
          }
      }
@@ -169,12 +187,14 @@ private:
         gfx.setFont();
         gfx.setTextSize(1);
         gfx.setTextColor(SSD1306_WHITE);
+        // Labels must match enum Item order.
         static const char* const labels[ITEM_COUNT] = {
-            "Zoom", "One Shot", "Delay ms","Delay fb","Filter Q"
+            "Zoom", "Delay ms", "Delay fb", "Filter Q", "FB HP", "FB LP", "Comp", "One Shot"
         };
-        const uint8_t visible = 5;
         const int rowHeight = 9;
         const int menuTop = 8;
+        const uint8_t maxVisible = static_cast<uint8_t>(gfx.height() / rowHeight);
+        const uint8_t visible = (ITEM_COUNT < maxVisible) ? ITEM_COUNT : maxVisible;
         uint8_t firstIndex = 0;
         if (ITEM_COUNT > visible) {
             if (selection >= visible) firstIndex = selection - visible + 1;
@@ -208,6 +228,8 @@ private:
                 case ITEM_DELAY_TIME: snprintf(valbuf, sizeof(valbuf), "%.0fms", delayTimeMs); break;
                 case ITEM_DELAY_FEEDBACK: snprintf(valbuf, sizeof(valbuf), "%.2f", delayFeedback); break;
                 case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
+                case ITEM_FB_HIGHPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackHighpassCutoff); break;
+                case ITEM_FB_LOWPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackLowpassCutoff); break;
             }
             int16_t x1, y1;
             uint16_t w, h;

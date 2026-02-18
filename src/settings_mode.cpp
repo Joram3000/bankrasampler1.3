@@ -84,11 +84,26 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
     currentFilterQ = q;
   });
 
+  // Forward feedback filter cutoff changes to the delay effect when available.
+  settingsScreen->setFeedbackLowpassCutoffCallback([](float hz) {
+    if (settingsDeps.delayEffect) {
+      settingsDeps.delayEffect->setFeedbackLowpassCutoff(hz);
+    }
+  });
+  settingsScreen->setFeedbackHighpassCutoffCallback([](float hz) {
+    if (settingsDeps.delayEffect) {
+      settingsDeps.delayEffect->setFeedbackHighpassCutoff(hz);
+    }
+  });
+
 
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);
   settingsScreen->setDelayFeedback(currentDelayFeedback);
   settingsScreen->setFilterQ(currentFilterQ);
+  // seed feedback filter cutoffs from defaults so the UI shows sensible values
+  settingsScreen->setFeedbackLowpassCutoff(FB_LOW_PASS_CUTOFF_HZ);
+  settingsScreen->setFeedbackHighpassCutoff(FB_HIGH_PASS_CUTOFF_HZ);
 
   loadSettingsFromSd(settingsScreen);
 }

@@ -52,6 +52,14 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
             float fq = line.substring(9).toFloat();
             settingsScreen->setFilterQ(fq);
             Serial.printf("Loaded filter_q=%.2f from settings\n", fq);
+        } else if (line.startsWith("fb_hp=")) {
+            float fh = line.substring(6).toFloat();
+            settingsScreen->setFeedbackHighpassCutoff(fh);
+            Serial.printf("Loaded fb_hp=%.2f from settings\n", fh);
+        } else if (line.startsWith("fb_lp=")) {
+            float fl = line.substring(6).toFloat();
+            settingsScreen->setFeedbackLowpassCutoff(fl);
+            Serial.printf("Loaded fb_lp=%.2f from settings\n", fl);
         } 
 
     }
@@ -89,6 +97,12 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
 
     Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
     f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
+
+    Serial.printf(" fb_hp=%.2f\n", settingsScreen->getFeedbackHighpassCutoff());
+    f.printf("fb_hp=%.2f\n", settingsScreen->getFeedbackHighpassCutoff());
+
+    Serial.printf(" fb_lp=%.2f\n", settingsScreen->getFeedbackLowpassCutoff());
+    f.printf("fb_lp=%.2f\n", settingsScreen->getFeedbackLowpassCutoff());
 
     Serial.println("Settings saved.");
 
