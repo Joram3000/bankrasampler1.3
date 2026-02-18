@@ -65,21 +65,36 @@ void sendEnabled(bool enabled) {
         if (sampleBytes != 2 || len == 0) return 0; // only PCM16
 
         const size_t samples = len / sizeof(int16_t);
-        const int16_t *in = reinterpret_cast<const int16_t *>(data);
-        temp16.resize(samples);
+        if (samples == 0) return 0;
 
-        for (size_t i = 0; i < samples; ++i) {
-            float x = static_cast<float>(in[i]);
-       
-            // Send naar delay: clamp naar int16 omdat Delay int16 verwacht
-            int16_t sendSample = clamp16(sendLevel * x);
+        // Treat samples as interleaved channels; process per frame and make a mono send.
+        const size_t frames = samples / static_cast<size_t>(std::max<int>(1, channels));
+        if (frames == 0) return 0;
+
+        const int16_t *in = reinterpret_cast<const int16_t *>(data);
+        temp16.resize(frames * static_cast<size_t>(channels));
+
+        for (size_t f = 0; f < frames; ++f) {
+            // compute mono send as the average of all channel samples for this frame
+            float monoSum = 0.0f;
+            for (int ch = 0; ch < channels; ++ch) {
+                monoSum += static_cast<float>(in[f * static_cast<size_t>(channels) + ch]);
+            }
+            float mono = monoSum / static_cast<float>(channels);
+
+            // Send één mono sample naar de delay
+            int16_t sendSample = clamp16(sendLevel * mono);
             effect_t wet = delay->process(sendSample);
 
-            float mixed = dryLevel * x + wetLevel * static_cast<float>(wet);
-            temp16[i] = clamp16(mixed);
+            // Mix wet (mono) back into every channel, keep dry per-channel
+            for (int ch = 0; ch < channels; ++ch) {
+                float x = static_cast<float>(in[f * static_cast<size_t>(channels) + ch]);
+                float mixed = dryLevel * x + wetLevel * static_cast<float>(wet);
+                temp16[f * static_cast<size_t>(channels) + ch] = clamp16(mixed);
+            }
         }
 
-        size_t bytes = samples * sizeof(int16_t);
+        size_t bytes = frames * static_cast<size_t>(channels) * sizeof(int16_t);
         return p_out->write(reinterpret_cast<const uint8_t *>(temp16.data()), bytes);
     }
 
