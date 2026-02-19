@@ -29,6 +29,6 @@ static const size_t kScopeSilenceFramesPerLoop = 64; // number of silence frames
 #define POT_POLARITY_INVERTED 1
 
 constexpr uint32_t POT_READ_INTERVAL_MS = 40;
-static const uint32_t SETTINGS_POLL_INTERVAL_MS = 100;
+static const uint32_t SETTINGS_POLL_INTERVAL_MS = 80;
 static const uint32_t SETTINGS_DEBOUNCE_MS = 20;
 

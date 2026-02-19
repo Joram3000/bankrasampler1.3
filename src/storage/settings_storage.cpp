@@ -48,10 +48,6 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
             float df = line.substring(9).toFloat();
             settingsScreen->setDelayFeedback(df);
             Serial.printf("Loaded delay_fb=%.2f from settings\n", df);
-        } else if (line.startsWith("filter_q=")) {
-            float fq = line.substring(9).toFloat();
-            settingsScreen->setFilterQ(fq);
-            Serial.printf("Loaded filter_q=%.2f from settings\n", fq);
         } else if (line.startsWith("fb_hp=")) {
             float fh = line.substring(6).toFloat();
             settingsScreen->setFeedbackHighpassCutoff(fh);
@@ -60,6 +56,10 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
             float fl = line.substring(6).toFloat();
             settingsScreen->setFeedbackLowpassCutoff(fl);
             Serial.printf("Loaded fb_lp=%.2f from settings\n", fl);
+        } else if (line.startsWith("filter_q=")) {
+            float fq = line.substring(9).toFloat();
+            settingsScreen->setFilterQ(fq);
+            Serial.printf("Loaded filter_q=%.2f from settings\n", fq);
         } 
 
     }
@@ -95,14 +95,15 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
     Serial.printf(" delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
     f.printf("delay_fb=%.2f\n", settingsScreen->getDelayFeedback());
 
-    Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
-    f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
-
+    
     Serial.printf(" fb_hp=%.2f\n", settingsScreen->getFeedbackHighpassCutoff());
     f.printf("fb_hp=%.2f\n", settingsScreen->getFeedbackHighpassCutoff());
-
+    
     Serial.printf(" fb_lp=%.2f\n", settingsScreen->getFeedbackLowpassCutoff());
     f.printf("fb_lp=%.2f\n", settingsScreen->getFeedbackLowpassCutoff());
+ 
+    Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
+    f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
 
     Serial.println("Settings saved.");
 
