@@ -9,7 +9,7 @@ constexpr bool ONE_SHOT_DEFAULT = false;
 // delay effect defaults
 constexpr float DEFAULT_DELAY_TIME_MS = 333.0f;
 constexpr float DELAY_TIME_MIN_MS        = 50.0f;
-constexpr float DELAY_TIME_MAX_MS        = 1000.0f;
+constexpr float DELAY_TIME_MAX_MS        = 300.0f;
 constexpr float DELAY_TIME_STEP_MS       = 10.0f;
 
 constexpr float DEFAULT_DELAY_FEEDBACK   = 0.8f;
