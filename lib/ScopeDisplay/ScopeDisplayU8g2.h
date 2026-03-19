@@ -54,8 +54,8 @@ class ScopeDisplayU8g2 {
           xSemaphoreGive(displayMutex);
         }
 
-        // throttle update rate
-        vTaskDelay(40 / portTICK_PERIOD_MS);
+        // ~50 fps — keep low enough that BT stack (prio 5) is never starved
+        vTaskDelay(20 / portTICK_PERIOD_MS);
       }
     }
 
@@ -203,7 +203,7 @@ class ScopeDisplayU8g2 {
         "ScopeDisplayU8G2",
         4096,   
         this,
-        1,
+        2,      // prio 2: above inputTask (1), below BT stack (5)
         &displayTaskHandle,
         0
       );
