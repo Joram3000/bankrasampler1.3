@@ -24,35 +24,42 @@ public:
     }
 
     // Called from the BT stack task (Core 0) — must never block.
+    // Strategy: drop the *incoming* packet if full rather than corrupt
+    // the existing stream by flushing middle sections of it.
+    // With 32 KB buffer (~180 ms) and 1 ms drain cycle, overflow should
+    // never happen — but if it does, a small gap is better than a mid-
+    // stream discontinuity.
     size_t write(const uint8_t *data, size_t len) {
         if (!handle) return 0;
-        // Drop oldest data if there is not enough free space so we always have
-        // the freshest audio without stalling the BT callback.
         size_t freeNow = xRingbufferGetCurFreeSize(handle);
         if (freeNow < len) {
-            size_t toFlush = len - freeNow;
-            while (toFlush > 0) {
-                size_t rxSize = 0;
-                void *item = xRingbufferReceiveUpTo(handle, &rxSize, 0, toFlush);
-                if (!item) break;
-                vRingbufferReturnItem(handle, item);
-                toFlush = (rxSize >= toFlush) ? 0 : toFlush - rxSize;
-            }
+            // Drop the new packet — keep existing buffered audio intact.
+            return 0;
         }
         return xRingbufferSend(handle, data, len, 0) == pdTRUE ? len : 0;
     }
 
-    // Called from audioTask (Core 1). Returns actual samples read (may be less
-    // than requested if the buffer is partially empty — remaining slots stay 0).
+    // Called from audioTask (Core 1).
+    // Reads exactly `samples` int16_t values, looping until satisfied or
+    // the buffer is empty. Partial reads are filled in by looping — this
+    // prevents silence gaps when the ESP-IDF ringbuf returns a smaller
+    // chunk than requested (happens at internal wrap-around boundary).
     size_t read(int16_t *out, size_t samples) {
         if (!handle || samples == 0) return 0;
-        size_t rxSize = 0;
-        void *item = xRingbufferReceiveUpTo(handle, &rxSize, 0, samples * sizeof(int16_t));
-        if (!item) return 0;
-        rxSize -= rxSize % sizeof(int16_t); // keep int16 alignment
-        if (rxSize > 0) memcpy(out, item, rxSize);
-        vRingbufferReturnItem(handle, item);
-        return rxSize / sizeof(int16_t);
+        size_t totalRead = 0;
+        while (totalRead < samples) {
+            size_t want = (samples - totalRead) * sizeof(int16_t);
+            size_t rxSize = 0;
+            void *item = xRingbufferReceiveUpTo(handle, &rxSize, 0, want);
+            if (!item) break;
+            rxSize -= rxSize % sizeof(int16_t); // keep int16_t alignment
+            if (rxSize > 0) {
+                memcpy(out + totalRead, item, rxSize);
+                totalRead += rxSize / sizeof(int16_t);
+            }
+            vRingbufferReturnItem(handle, item);
+        }
+        return totalRead;
     }
 
     size_t available() const {

@@ -16,8 +16,11 @@
 
 #ifdef BLUETOOTH_MODE
   #include <BluetoothA2DPSink.h>
-  // BT audio ringbuffer — defined here, declared extern in audio_mixer.h
-  BTRingBuffer btAudioBuffer(8192);
+  // BT audio ringbuffer — 16 KB = ~90 ms bij 44100 Hz stereo 16-bit.
+  // A2DP bursts zijn typisch 4-8 KB elke ~20 ms; 16 KB geeft ruim 4× marge.
+  // Groter dan dit riskeert heap fragmentatie die de BT controller verhindert
+  // te starten (die heeft ~65 KB aaneengesloten intern DRAM nodig).
+  BTRingBuffer btAudioBuffer(16 * 1024);
   static BluetoothA2DPSink a2dp_sink;
   static volatile bool btConnected = false;
 #endif
@@ -55,10 +58,10 @@ static volatile bool pendingStop      = false; // true -> begin fade-out
 // before actually calling player.setActive(false). Stays on audioTask side only.
 static bool  fadingOut      = false;
 static int   fadeTicksLeft  = 0;
-// Number of 2 ms yields to keep copy() running after setActive(false),
+// Number of 1 ms yields to keep copy() running after setActive(false),
 // so AudioTools' fade ramp fully drains before switching to silence pump.
-// BUTTON_FADE_MS=30 -> 30/2 = 15 ticks, add 3 for margin.
-static constexpr int FADE_DRAIN_TICKS = (BUTTON_FADE_MS / 2) + 3;
+// BUTTON_FADE_MS=30 -> 30/1 = 30 ticks, add 5 for margin.
+static constexpr int FADE_DRAIN_TICKS = BUTTON_FADE_MS + 5;
 
 // --- Runtime state ----------------------------------------------------------
 static int      currentSample          = -1;
@@ -101,14 +104,15 @@ static void audioTask(void *) {
         size_t copied = 0;
 
         if (active || fadingOut) {
-            // Drain loop: keep pushing audio until I2S is full (copy returns 0)
-            // or a safety cap is hit. This prevents I2S underruns between task ticks.
+            // Drain loop: push audio until I2S DMA is full or no more data.
+            // mixer.write() (inside player.copy()) reads btAudioBuffer on every
+            // call, so BT is automatically consumed proportional to I2S output.
             for (int i = 0; i < 16; ++i) {
                 size_t n = player.copy();
                 copied += n;
-                if (n == 0) break; // I2S full or no more data
+                if (n == 0) break;
             }
-            active = player.isActive(); // re-read after copy loop
+            active = player.isActive();
 
             if (fadingOut) {
                 if (fadeTicksLeft > 0) --fadeTicksLeft;
@@ -116,16 +120,15 @@ static void audioTask(void *) {
             }
         }
 
-        // When neither playing nor fading, pump silence so the delay tail keeps
-        // draining through the mixer into I2S. Also handles BT audio drain.
+        // When idle: pump silence so delay tail drains and BT audio keeps flowing.
+        // mixer.write() reads btAudioBuffer automatically on every call.
         if (!active && !fadingOut) {
 #ifdef BLUETOOTH_MODE
+            // Drain everything available so BT ring buffer never fills up.
             size_t btFrames = btAudioBuffer.available() / (2 * sizeof(int16_t));
             size_t frames   = std::max<size_t>(kScopeSilenceFramesPerLoop, btFrames);
             frames          = std::min<size_t>(frames, 512u);
-            if (delayEffect1.isAllocated() || btFrames > 0) {
-                mixer.pumpSilenceFrames(frames);
-            }
+            mixer.pumpSilenceFrames(frames);
 #else
             mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
 #endif
@@ -144,10 +147,9 @@ static void audioTask(void *) {
             }
         }
 
-        // Short yield so BT stack and other Core 1 tasks get CPU time.
-        // Do NOT use vTaskDelayUntil here — we want to wake immediately when
-        // the I2S DMA has room again, not on a fixed schedule.
-        vTaskDelay(pdMS_TO_TICKS(2));
+        // Yield 1 ms — short enough that A2DP bursts (~every 10-20 ms) are
+        // always consumed well before the 8 KB ring buffer fills up.
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
@@ -178,7 +180,7 @@ static void startAudioAndInputTasks() {
         inputTask, "inputTask",
         sizeof(inputTaskStack) / sizeof(StackType_t),
         nullptr,
-        2,              // below BT stack (prio 5) — BT won't be starved
+        1,              // prio 1: below BT stack (prio 5) and BT callbacks — never starves A2DP
         inputTaskStack,
         &inputTaskTCB,
         0               // Core 0
@@ -405,8 +407,25 @@ static void initBluetooth() {
         Serial.printf("[BT] Heap before A2DP start: %d\n", ESP.getFreeHeap());
 
     btAudioBuffer.begin();
+
+    // Geef de BLE heap vrij — we gebruiken alleen Classic BT (A2DP).
+    // Dit maakt ~30 KB aaneengesloten DRAM vrij voor de Classic BT controller.
+    // Moet vóór btStart() / a2dp_sink.start() worden aangeroepen.
+    esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
+
+    // output_raw_stream=false → the A2DP library handles decoding internally
+    // and delivers raw PCM to the callback.
+    // The default m_sample_rate is already 44100 Hz. Log if the phone
+    // negotiates a different rate so we can detect samplerate mismatch.
     a2dp_sink.set_stream_reader(btAudioDataCallback, false);
+    a2dp_sink.set_sample_rate_callback([](uint16_t rate) {
+        Serial.printf("[BT] Negotiated sample rate: %u Hz%s\n", rate,
+                      rate != 44100 ? " ← MISMATCH! Expect crackle." : "");
+    });
     a2dp_sink.set_on_connection_state_changed(btConnectionStateChanged, nullptr);
+    // Disable auto-reconnect — heap fragmentation during reconnect can stall
+    // the audio task long enough to cause a crackle burst.
+    a2dp_sink.set_auto_reconnect(false);
     a2dp_sink.start("BANKRAKAKA");
 
     if (DEBUGMODE)
