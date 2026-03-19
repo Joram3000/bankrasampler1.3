@@ -20,8 +20,6 @@ class ScopeDisplayU8g2 {
   int* waveformIndex;
   int waveformSamples;
   
-  const bool useSmoothing = false; // naar settings?
-  const float smoothingAlpha = 0.2f;// kan weg?
   
   float horizZoom = DEFAULT_HORIZ_ZOOM;
     float vertScale = DEFAULT_VERT_SCALE;
@@ -93,27 +91,15 @@ class ScopeDisplayU8g2 {
       for (int i = 0; i < kNumOverlays; ++i) prevYs[i] = NAN;
 
       // Helper to draw one overlay given multiplier and prevY reference
+      // (Simplified — no exponential smoothing)
       auto drawOverlay = [&](int x, float yValue, float &prevY) {
-        if (useSmoothing) {
-          if (!isfinite(prevY)) prevY = yValue;
-          float smoothY = (smoothingAlpha * yValue) + ((1.0f - smoothingAlpha) * prevY);
-          int yPrev = constrain(static_cast<int>(round(prevY)), 0, kScreenHeight - 1);
-          int yCur  = constrain(static_cast<int>(round(smoothY)), 0, kScreenHeight - 1);
-          if (x == 0) {
-            display->drawPixel(x, yCur);
-          } else {
-            display->drawLine(x - 1, yPrev, x, yCur);
-          }
-          prevY = smoothY;
+        int y = constrain(static_cast<int>(round(yValue)), 0, kScreenHeight - 1);
+        if (!isfinite(prevY)) {
+          display->drawPixel(x, y);
         } else {
-          int y = constrain(static_cast<int>(round(yValue)), 0, kScreenHeight - 1);
-          if (!isfinite(prevY)) {
-            display->drawPixel(x, y);
-          } else {
-            display->drawLine(x - 1, static_cast<int>(round(prevY)), x, y);
-          }
-          prevY = static_cast<float>(y);
+          display->drawLine(x - 1, static_cast<int>(round(prevY)), x, y);
         }
+        prevY = static_cast<float>(y);
       };
 
       for (int x = 0; x < kScreenWidth; ++x) {
