@@ -14,7 +14,11 @@ OperatingMode currentMode = OperatingMode::Performance;
 
 // Persisted settings state (used to seed UI on boot)
 float currentFilterQ = LOW_PASS_Q;
+#ifdef BLUETOOTH_MODE
+float currentDelayTimeMs = BT_DEFAULT_DELAY_TIME_MS;
+#else
 float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
+#endif
 float currentDelayFeedback = DEFAULT_DELAY_FEEDBACK;
 
 // Settings mode switch state
@@ -63,9 +67,15 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
 
   settingsScreen->setZoomCallback([](float zoomFactor) { setScopeHorizZoom(zoomFactor); });
   settingsScreen->setDelayTimeCallback([](float durationMs) {
+#ifdef BLUETOOTH_MODE
+    // In BT mode the delay buffer is smaller — clamp to BT max.
+    const float maxMs = BT_DELAY_TIME_MAX_MS;
+#else
+    const float maxMs = DELAY_TIME_MAX_MS;
+#endif
     float clamped = durationMs;
     if (clamped < DELAY_TIME_MIN_MS) clamped = DELAY_TIME_MIN_MS;
-    if (clamped > DELAY_TIME_MAX_MS) clamped = DELAY_TIME_MAX_MS;
+    if (clamped > maxMs)             clamped = maxMs;
     currentDelayTimeMs = clamped;
     if (settingsDeps.delayEffect) {
       settingsDeps.delayEffect->setDuration(static_cast<uint16_t>(clamped));
