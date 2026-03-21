@@ -5,7 +5,11 @@
 #include <cstdint>
 #include "pins.h"
 
-#define DEBUGMODE 1
+// Runtime debug toggle — controlled from settings screen.
+// When true, serial diagnostic prints are active.
+// When false, prints are suppressed (reduces CPU overhead / dropout risk).
+extern bool debugEnabled;
+#define DEBUGMODE debugEnabled
 
 constexpr size_t BUTTON_COUNT = BUTTON_CHANNEL_ON_MUX.size();
 constexpr bool MUX_ACTIVE_LOW = true;

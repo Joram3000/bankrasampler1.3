@@ -16,14 +16,29 @@
 
 #ifdef BLUETOOTH_MODE
   #include <BluetoothA2DPSink.h>
-  // BT audio ringbuffer — 16 KB = ~90 ms bij 44100 Hz stereo 16-bit.
-  // A2DP bursts zijn typisch 4-8 KB elke ~20 ms; 16 KB geeft ruim 4× marge.
-  // Groter dan dit riskeert heap fragmentatie die de BT controller verhindert
-  // te starten (die heeft ~65 KB aaneengesloten intern DRAM nodig).
-  BTRingBuffer btAudioBuffer(16 * 1024);
+  // BT audio ringbuffer — 8 KB = ~45 ms at 44100 Hz stereo 16-bit.
+  // A2DP bursts are ~4–8 KB every ~20 ms; audioTask drains every 1 ms so
+  // 8 KB (2× burst) is ample. Keeping this small leaves heap for the BT
+  // stack to complete the A2DP connection handshake (~20–30 KB needed).
+  BTRingBuffer btAudioBuffer(8 * 1024);
   static BluetoothA2DPSink a2dp_sink;
   static volatile bool btConnected = false;
+
+  // Lock-free flags from BT callback (Core 0) to audioTask (Core 1).
+  // audioTask is the sole owner of the mixer — callbacks must never touch it directly.
+  static volatile bool pendingBtConnect    = false;
+  static volatile bool pendingBtDisconnect = false;
+
+  // When true, the BT callback writes directly to scopeI2s (I2S + scope capture)
+  // instead of the ring buffer. Set true when BT is connected and no sample
+  // is playing — follows the AudioTools basic-a2dp-i2s pattern.
+  // When a sample plays, this flips to false and BT data goes to the ring buffer
+  // so the mixer can combine dry + BT.
+  static volatile bool btDirectMode = false;
 #endif
+
+// Runtime debug toggle — default on, toggled from settings screen.
+bool debugEnabled = true;
 
 // --- Audio system -----------------------------------------------------------
 AudioInfo info(44100, 2, 16);
@@ -54,13 +69,10 @@ static volatile bool setupDone = false;
 static volatile int  pendingPlayIndex = -1;    // >=0 -> start this sample
 static volatile bool pendingStop      = false; // true -> begin fade-out
 
-// Set by audioTask itself once pendingStop is consumed; counts down fade ticks
-// before actually calling player.setActive(false). Stays on audioTask side only.
+// Fade state lives only in audioTask — never read by other tasks.
 static bool  fadingOut      = false;
 static int   fadeTicksLeft  = 0;
-// Number of 1 ms yields to keep copy() running after setActive(false),
-// so AudioTools' fade ramp fully drains before switching to silence pump.
-// BUTTON_FADE_MS=30 -> 30/1 = 30 ticks, add 5 for margin.
+// BUTTON_FADE_MS=30 -> 30/1 = 30 ticks, +5 for AudioTools ramp drain margin.
 static constexpr int FADE_DRAIN_TICKS = BUTTON_FADE_MS + 5;
 
 // --- Runtime state ----------------------------------------------------------
@@ -83,12 +95,49 @@ static void audioTask(void *) {
     while (!setupDone) vTaskDelay(pdMS_TO_TICKS(10));
 
     for (;;) {
+#ifdef BLUETOOTH_MODE
+        // BT connect: free delay buffer to save heap, enter direct mode
+        // where the BT callback writes straight to I2S (basic-a2dp-i2s pattern).
+        if (pendingBtConnect) {
+            pendingBtConnect = false;
+            mixer.sendEnabled(false);
+            delayEffect1.freeBuffer();
+            // Enter direct mode: BT callback writes straight to I2S.
+            // No prebuffering needed — the callback delivers data at
+            // exactly 44100 Hz, matching I2S consumption perfectly.
+            btDirectMode = true;
+            if (DEBUGMODE)
+                Serial.printf("[AUDIO] BT connected — delay freed, direct mode, heap=%d\n",
+                              ESP.getFreeHeap());
+        }
+        // BT disconnect: restore delay + switch state, exit direct mode.
+        if (pendingBtDisconnect) {
+            pendingBtDisconnect = false;
+            btDirectMode = false;
+            btAudioBuffer.clear();
+            delayEffect1.reallocate();
+            mixer.sendEnabled(switchDelaySendEnabled);
+            if (DEBUGMODE)
+                Serial.printf("[AUDIO] BT disconnected — delay reallocated, heap=%d\n",
+                              ESP.getFreeHeap());
+        }
+#endif
+
         // Command dispatch
         int playIdx = pendingPlayIndex;
         if (playIdx >= 0) {
             pendingPlayIndex = -1;
             pendingStop      = false;
             fadingOut        = false;
+#ifdef BLUETOOTH_MODE
+            if (btConnected && btDirectMode) {
+                // Switch from direct I2S to ring-buffer mode so the mixer
+                // can combine sample audio + BT audio together.
+                // Ring buffer is already warm (callback always writes to it,
+                // idle drain keeps it fresh) — no gap in BT audio.
+                btDirectMode = false;
+            }
+#endif
             player.setPath(SAMPLE_PATHS[playIdx]);
             player.setActive(true);
             currentSample = playIdx;
@@ -105,8 +154,8 @@ static void audioTask(void *) {
 
         if (active || fadingOut) {
             // Drain loop: push audio until I2S DMA is full or no more data.
-            // mixer.write() (inside player.copy()) reads btAudioBuffer on every
-            // call, so BT is automatically consumed proportional to I2S output.
+            // mixer.write() reads btAudioBuffer on every call, so BT is
+            // consumed proportional to I2S output.
             for (int i = 0; i < 16; ++i) {
                 size_t n = player.copy();
                 copied += n;
@@ -114,21 +163,40 @@ static void audioTask(void *) {
             }
             active = player.isActive();
 
+#ifdef BLUETOOTH_MODE
+            // SD-card stall: only drain BT buffer if it's getting full (>4 KB),
+            // i.e. a real stall — not just I2S-DMA full (which also returns copied==0).
+            if (copied == 0 && btAudioBuffer.available() > 4 * 1024) {
+                size_t btFrames = btAudioBuffer.available() / (2 * sizeof(int16_t));
+                mixer.pumpSilenceFrames(std::min<size_t>(btFrames, 256u));
+            }
+#endif
+
             if (fadingOut) {
                 if (fadeTicksLeft > 0) --fadeTicksLeft;
                 else fadingOut = false;
             }
         }
 
-        // When idle: pump silence so delay tail drains and BT audio keeps flowing.
-        // mixer.write() reads btAudioBuffer automatically on every call.
+        // When idle: pump silence so delay tail drains / scope stays alive.
         if (!active && !fadingOut) {
 #ifdef BLUETOOTH_MODE
-            // Drain everything available so BT ring buffer never fills up.
-            size_t btFrames = btAudioBuffer.available() / (2 * sizeof(int16_t));
-            size_t frames   = std::max<size_t>(kScopeSilenceFramesPerLoop, btFrames);
-            frames          = std::min<size_t>(frames, 512u);
-            mixer.pumpSilenceFrames(frames);
+            if (btConnected) {
+                if (!btDirectMode) {
+                    // Ring-buffer mode but no sample — switch back to direct.
+                    // This happens when a sample finishes while BT is connected.
+                    btDirectMode = true;
+                    if (DEBUGMODE)
+                        Serial.println(F("[BT] Sample done, back to direct mode"));
+                }
+                // Direct mode: BT callback writes to I2S at 44100 Hz.
+                // Drain the ring buffer to prevent it filling up (callback
+                // always writes to it). This keeps it "warm" with recent data
+                // so the transition to mixing mode is seamless.
+                btAudioBuffer.clear();
+            } else {
+                mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
+            }
 #else
             mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
 #endif
@@ -147,15 +215,26 @@ static void audioTask(void *) {
             }
         }
 
-        // Yield 1 ms — short enough that A2DP bursts (~every 10-20 ms) are
-        // always consumed well before the 8 KB ring buffer fills up.
+        // Rate control:
+        //  Direct BT mode (idle): BT callback drives I2S, audioTask just yields.
+        //  Active playback:       player.copy() → I2S blocking governs rate.
+        //  No BT / idle:          simple 1 ms yield.
+#ifdef BLUETOOTH_MODE
+        if (btConnected && btDirectMode) {
+            // BT callback handles all I2S output — just yield time.
+            vTaskDelay(pdMS_TO_TICKS(20));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+#else
         vTaskDelay(pdMS_TO_TICKS(1));
+#endif
     }
 }
 
 // --- Input task (Core 0, prio 2) --------------------------------------------
-// Polls the mux every 1 ms. Kept below BT stack priority so A2DP is not
-// starved. Never touches player/mixer — uses the lock-free flag channel above.
+// Polls the mux every 1 ms. Priority below BT stack so A2DP is never starved.
+// Never touches player/mixer — uses the lock-free flag channel above.
 static void inputTask(void *) {
     while (!setupDone) vTaskDelay(pdMS_TO_TICKS(10));
     for (;;) {
@@ -180,7 +259,7 @@ static void startAudioAndInputTasks() {
         inputTask, "inputTask",
         sizeof(inputTaskStack) / sizeof(StackType_t),
         nullptr,
-        1,              // prio 1: below BT stack (prio 5) and BT callbacks — never starves A2DP
+        2,              // prio 2: above idle, below BT stack (prio 5)
         inputTaskStack,
         &inputTaskTCB,
         0               // Core 0
@@ -211,12 +290,14 @@ void updateCutoff(float target) {
 static void onMuxChange(uint8_t channel, bool active) {
     if (channel == SWITCH_CHANNEL_FILTER_ENABLE && active != switchFilterEnabled) {
         switchFilterEnabled = active;
+        setHudPotValue(lastVol < 0.0f ? 0.0f : lastVol, active);
         if (DEBUGMODE) Serial.printf("[MUX] Filter: %s\n", active ? "ON" : "OFF");
         return;
     }
 
     if (channel == SWITCH_CHANNEL_DELAY_SEND && active != switchDelaySendEnabled) {
         switchDelaySendEnabled = active;
+        setHudDelayEnabled(active);
         if (DEBUGMODE) Serial.printf("[MUX] Delay send: %s\n", active ? "ON" : "OFF");
         return;
     }
@@ -237,7 +318,6 @@ static void onMuxChange(uint8_t channel, bool active) {
 
 // --- Sample playback commands ------------------------------------------------
 void playSample(int index) {
-    // Signal audioTask via lock-free flag — never block or delay inputTask.
     pendingPlayIndex = index;
     pendingStop      = false;
     if (DEBUGMODE) Serial.printf("[PLAY] %s\n", SAMPLE_PATHS[index]);
@@ -248,7 +328,6 @@ void stopSample(int index) {
         if (ss->getOneShot()) return; // one-shot ends itself
     }
     if (currentSample != index) return;
-    // Signal audioTask to fade out. The delay tail drains via silence pump.
     pendingStop = true;
 }
 
@@ -264,6 +343,8 @@ void initPlayer() {
     if (DEBUGMODE) Serial.println(F("[INIT] Player OK"));
 }
 
+// Sets up I2S stream and filter pipeline. Delay + mixer are initialised later
+// (initDelayAndMixer) once heap usage from BT and other init is known.
 void initAudio() {
     if (DEBUGMODE) {
         Serial.printf("[HEAP] Before audio init: %d free\n", ESP.getFreeHeap());
@@ -276,9 +357,9 @@ void initAudio() {
     config.pin_ws       = I2S_PIN_WS;
     config.pin_data     = I2S_PIN_DATA;
     config.i2s_format   = I2S_STD_FORMAT;
-    // 4 buffers × 512 samples = ~46 ms headroom at 44100 Hz.
-    // Prevents I2S underruns when SD reads stall for a few ms.
-    config.buffer_count = 4;
+    // 8 buffers × 512 samples ≈ 92 ms headroom at 44100 Hz.
+    // Allows SD-card reads to stall up to ~90 ms without an I2S underrun.
+    config.buffer_count = 8;
     config.buffer_size  = 512;
 
     if (!scopeI2s.begin(config)) {
@@ -290,26 +371,45 @@ void initAudio() {
     filteredStream.setFilter(0, &insertFilterL);
     filteredStream.setFilter(1, &insertFilterR);
 
-#ifdef BLUETOOTH_MODE
-    // In BT mode: shorter delay buffer to leave ~13 KB for BT GATT/SDP queues.
-    constexpr uint16_t delayMax = static_cast<uint16_t>(BT_DELAY_TIME_MAX_MS);
-    constexpr uint16_t delayDef = static_cast<uint16_t>(BT_DEFAULT_DELAY_TIME_MS);
-    if (DEBUGMODE) Serial.printf("[BT] Delay capped at %u ms to save RAM\n", delayMax);
-#else
-    constexpr uint16_t delayMax = static_cast<uint16_t>(DELAY_TIME_MAX_MS);
-    constexpr uint16_t delayDef = static_cast<uint16_t>(DEFAULT_DELAY_TIME_MS);
-#endif
+    if (DEBUGMODE) Serial.println(F("[INIT] Audio pipeline OK"));
+}
+
+// Compute how much delay we can safely allocate given the current free heap.
+// Called after BT init so BT heap consumption is already accounted for.
+// Keeps SAFETY_BYTES free for runtime allocations (BT queues, SD lib, stacks).
+static uint16_t computeMaxDelayMs() {
+    constexpr uint32_t SAFETY_BYTES = 45 * 1024; // keep 45 KB free after alloc
+    constexpr uint16_t ABS_MIN_MS   = 50;
+    constexpr uint16_t ABS_MAX_MS   = 600;
+
+    uint32_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap <= SAFETY_BYTES) return ABS_MIN_MS;
+
+    uint32_t usable = freeHeap - SAFETY_BYTES;
+    // effect_t is int32_t (4 bytes); 44100 samples/sec
+    uint32_t maxMs = (usable / sizeof(int32_t) * 1000UL) / (uint32_t)info.sample_rate;
+
+    if (maxMs < ABS_MIN_MS) return ABS_MIN_MS;
+    if (maxMs > ABS_MAX_MS) return ABS_MAX_MS;
+    return static_cast<uint16_t>(maxMs);
+}
+
+// Allocate the delay line and configure the mixer. Must be called after all
+// other heap-consuming init (especially BT) so computeMaxDelayMs() is accurate.
+static void initDelayAndMixer(uint16_t maxDelayMs) {
+    uint16_t defMs = std::min(maxDelayMs, static_cast<uint16_t>(DEFAULT_DELAY_TIME_MS));
 
     if (DEBUGMODE)
-        Serial.printf("[HEAP] Before delay alloc: %d free\n", ESP.getFreeHeap());
+        Serial.printf("[HEAP] Delay: max=%ums, free=%u before alloc\n",
+                      maxDelayMs, ESP.getFreeHeap());
 
-    delayEffect1.begin(info.sample_rate, delayMax, delayDef, DEFAULT_DELAY_FEEDBACK);
+    delayEffect1.begin(info.sample_rate, maxDelayMs, defMs, DEFAULT_DELAY_FEEDBACK);
 
     if (DEBUGMODE)
-        Serial.printf("[HEAP] After delay alloc:  %d free\n", ESP.getFreeHeap());
+        Serial.printf("[HEAP] After delay alloc: %u free\n", ESP.getFreeHeap());
 
     mixer.begin(scopeI2s, delayEffect1, info);
-    if (DEBUGMODE) Serial.println(F("[INIT] Audio OK"));
+    mixer.sendEnabled(switchDelaySendEnabled); // apply switch state set by initInputControls
 }
 
 void initDisplay() {
@@ -348,11 +448,16 @@ void checkPot(uint32_t now) {
     float norm = constrain(raw, 0, 4095) / 4095.0f;
 
     if (switchFilterEnabled) {
-        filterCutoff = LOW_PASS_MIN_HZ + norm * (LOW_PASS_MAX_HZ - LOW_PASS_MIN_HZ);
+        if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.02f) {
+            lastVol = norm;
+            filterCutoff = LOW_PASS_MIN_HZ + norm * (LOW_PASS_MAX_HZ - LOW_PASS_MIN_HZ);
+            setHudPotValue(norm, true);
+        }
     } else {
-        if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.01f) {
+        if (lastVol < 0.0f || fabsf(norm - lastVol) > 0.02f) {
             lastVol = norm;
             player.setVolume(lastVol);
+            setHudPotValue(norm, false);
         }
     }
 }
@@ -377,28 +482,61 @@ static void initInputControls() {
         filterCutoff   = LOW_PASS_MIN_HZ + norm * (LOW_PASS_MAX_HZ - LOW_PASS_MIN_HZ);
         smoothedCutoff = filterCutoff;
         updateCutoff(filterCutoff);
+        setHudPotValue(norm, true);
     } else {
         lastVol = norm;
         player.setVolume(lastVol);
+        setHudPotValue(norm, false);
     }
 
-    mixer.sendEnabled(delayState);
-    lastPotRead = millis(); // prevent immediate re-read in checkPot()
+    // mixer.sendEnabled() is re-applied in initDelayAndMixer() after mixer.begin().
+    // Store the state here so initDelayAndMixer knows what to apply.
+    switchDelaySendEnabled = delayState;
+    setHudDelayEnabled(delayState);
+
+    lastPotRead = millis();
 }
 
 #ifdef BLUETOOTH_MODE
 // --- Bluetooth callbacks -----------------------------------------------------
 static void btAudioDataCallback(const uint8_t *data, uint32_t length) {
+    // Always feed ring buffer so it stays "warm" with recent data.
+    // This ensures smooth transitions when a sample starts playing —
+    // the mixer can read from a pre-filled buffer without a BT audio gap.
     btAudioBuffer.write(data, length);
+
+    if (btDirectMode) {
+        // Direct path (no sample playing): also write straight to I2S + scope.
+        // This is the AudioTools recommended approach (basic-a2dp-i2s.ino).
+        // The BT stack delivers data at exactly 44100 Hz stereo 16-bit,
+        // so I2S DMA consumption matches perfectly — no rate control needed.
+        scopeI2s.write(data, length);
+    }
 }
 
 static void btConnectionStateChanged(esp_a2d_connection_state_t state, void *) {
     if (state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
-        btConnected = true;
-        Serial.println(F("[BT] Connected"));
+        btConnected        = true;
+        pendingBtConnect   = true;
+        pendingBtDisconnect = false;
+        setHudBtConnected(true);
+
+        esp_bd_addr_t *addr = a2dp_sink.get_last_peer_address();
+        Serial.printf("[BT] *** CONNECTED *** addr=%s  heap=%d\n",
+                      a2dp_sink.to_str(*addr), ESP.getFreeHeap());
+
     } else if (state == ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
-        btConnected = false;
-        Serial.printf("[BT] Disconnected — heap: %d\n", ESP.getFreeHeap());
+        btConnected         = false;
+        pendingBtDisconnect = true;
+        pendingBtConnect    = false;
+        setHudBtConnected(false);
+        Serial.printf("[BT] *** DISCONNECTED ***  heap=%d\n", ESP.getFreeHeap());
+
+    } else if (state == ESP_A2D_CONNECTION_STATE_CONNECTING) {
+        Serial.printf("[BT] Connecting...  heap=%d\n", ESP.getFreeHeap());
+
+    } else if (state == ESP_A2D_CONNECTION_STATE_DISCONNECTING) {
+        Serial.printf("[BT] Disconnecting...  heap=%d\n", ESP.getFreeHeap());
     }
 }
 
@@ -408,23 +546,19 @@ static void initBluetooth() {
 
     btAudioBuffer.begin();
 
-    // Geef de BLE heap vrij — we gebruiken alleen Classic BT (A2DP).
-    // Dit maakt ~30 KB aaneengesloten DRAM vrij voor de Classic BT controller.
-    // Moet vóór btStart() / a2dp_sink.start() worden aangeroepen.
+    // Release BLE heap — we only use Classic BT (A2DP).
+    // Frees ~30 KB of contiguous DRAM for the Classic BT controller.
+    // Must be called before btStart() / a2dp_sink.start().
     esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
 
-    // output_raw_stream=false → the A2DP library handles decoding internally
-    // and delivers raw PCM to the callback.
-    // The default m_sample_rate is already 44100 Hz. Log if the phone
-    // negotiates a different rate so we can detect samplerate mismatch.
     a2dp_sink.set_stream_reader(btAudioDataCallback, false);
     a2dp_sink.set_sample_rate_callback([](uint16_t rate) {
         Serial.printf("[BT] Negotiated sample rate: %u Hz%s\n", rate,
-                      rate != 44100 ? " ← MISMATCH! Expect crackle." : "");
+                      rate != 44100 ? " <- MISMATCH! Expect crackle." : "");
     });
     a2dp_sink.set_on_connection_state_changed(btConnectionStateChanged, nullptr);
     // Disable auto-reconnect — heap fragmentation during reconnect can stall
-    // the audio task long enough to cause a crackle burst.
+    // the audio task long enough to cause a burst of crackle.
     a2dp_sink.set_auto_reconnect(false);
     a2dp_sink.start("BANKRAKAKA");
 
@@ -438,36 +572,40 @@ static void initBluetooth() {
 // --- Setup ------------------------------------------------------------------
 void setup() {
     Serial.begin(115200);
-    AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
+    AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Warning);
 
     initDisplay();
     initSd();
     setMuxChangeCallback(onMuxChange);
     initMuxScanner(5000);
-    initInputControls();
     initAudio();
+    initInputControls();
     initPlayer();
+
+#ifdef BLUETOOTH_MODE
+    // BT init before delay allocation so computeMaxDelayMs() accounts for BT heap.
+    initBluetooth();
+#endif
+
+    // Allocate delay based on remaining heap (after BT if applicable).
+    uint16_t dynMaxMs = computeMaxDelayMs();
+    initDelayAndMixer(dynMaxMs);
 
     SettingsUiDependencies settingsDeps;
     settingsDeps.delayEffect    = &delayEffect1;
     settingsDeps.filterEffect   = &insertFilterL;
     settingsDeps.releaseButtons = releaseAllButtons;
+    settingsDeps.maxDelayMs     = dynMaxMs;
     initSettingsUi(settingsDeps);
 
     hideSplash();
 
-#ifdef BLUETOOTH_MODE
-    initBluetooth();
-#endif
-
-    // Always spawn tasks — audioTask drives I2S, inputTask drives mux scanning.
     startAudioAndInputTasks();
-
-    // Release tasks; setup() is now complete.
     setupDone = true;
 
     if (DEBUGMODE)
-        Serial.printf("[INIT] Done — heap: %d free\n", ESP.getFreeHeap());
+        Serial.printf("[INIT] Done — heap: %d free, delay max: %u ms\n",
+                      ESP.getFreeHeap(), dynMaxMs);
 }
 
 // --- Loop (UI only — Core 1, low priority) ----------------------------------
@@ -477,7 +615,17 @@ void loop() {
 
     checkPot(now);
     switchFilterEnabled ? updateCutoff(filterCutoff) : updateCutoff(20000.0f);
-    switchDelaySendEnabled ? mixer.sendEnabled(true) : mixer.sendEnabled(false);
+
+    // Delay send: only apply via the switch when BT is not connected.
+    // When BT connects/disconnects the mixer is updated by audioTask via flags.
+#ifdef BLUETOOTH_MODE
+    if (!btConnected) {
+        mixer.sendEnabled(switchDelaySendEnabled);
+    }
+#else
+    mixer.sendEnabled(switchDelaySendEnabled);
+#endif
+
     checkSettingsMode(now);
 
     if (getOperatingMode() == OperatingMode::Settings) {

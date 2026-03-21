@@ -19,24 +19,49 @@ public:
     explicit BTRingBuffer(size_t capacity = 8192) : cap(capacity) {}
 
     void begin() {
-        if (handle) return; // already created
+        if (handle) return;
         handle = xRingbufferCreate(cap, RINGBUF_TYPE_BYTEBUF);
     }
 
+    // Resize the ring buffer — called from audioTask (Core 1).
+    // Pauses writes briefly so Core 0 cannot use the old handle after deletion.
+    bool resize(size_t newCap) {
+        paused_ = true;
+        __sync_synchronize();
+        vTaskDelay(pdMS_TO_TICKS(3)); // let any in-flight write() on Core 0 finish
+
+        RingbufHandle_t old = handle;
+        handle = nullptr;
+        __sync_synchronize();
+
+        handle = xRingbufferCreate(newCap, RINGBUF_TYPE_BYTEBUF);
+        if (handle) cap = newCap;
+        else        handle = old, old = nullptr; // restore on failure
+
+        __sync_synchronize();
+        paused_ = false;
+
+        if (old) vRingbufferDelete(old);
+        return handle != nullptr;
+    }
+
     // Called from the BT stack task (Core 0) — must never block.
-    // Strategy: drop the *incoming* packet if full rather than corrupt
-    // the existing stream by flushing middle sections of it.
-    // With 32 KB buffer (~180 ms) and 1 ms drain cycle, overflow should
-    // never happen — but if it does, a small gap is better than a mid-
-    // stream discontinuity.
+    // Captures handle once so Core 1 resize() cannot swap it mid-call.
     size_t write(const uint8_t *data, size_t len) {
-        if (!handle) return 0;
-        size_t freeNow = xRingbufferGetCurFreeSize(handle);
+        RingbufHandle_t h = handle; // atomic 32-bit load
+        if (!h || paused_) return 0;
+        size_t freeNow = xRingbufferGetCurFreeSize(h);
         if (freeNow < len) {
-            // Drop the new packet — keep existing buffered audio intact.
+            ++dropCount;
             return 0;
         }
-        return xRingbufferSend(handle, data, len, 0) == pdTRUE ? len : 0;
+        return xRingbufferSend(h, data, len, 0) == pdTRUE ? len : 0;
+    }
+
+    uint32_t getAndResetDropCount() {
+        uint32_t n = dropCount;
+        dropCount = 0;
+        return n;
     }
 
     // Called from audioTask (Core 1).
@@ -67,9 +92,26 @@ public:
         return cap - xRingbufferGetCurFreeSize(handle);
     }
 
+    // Actual capacity of the underlying ring buffer (may be < requested size
+    // if resize() failed — callers should use this, not a hardcoded constant).
+    size_t capacity() const { return cap; }
+
+    // Discard all pending data. Called from audioTask when switching modes.
+    void clear() {
+        if (!handle) return;
+        for (;;) {
+            size_t rxSize = 0;
+            void *item = xRingbufferReceiveUpTo(handle, &rxSize, 0, cap);
+            if (!item) break;
+            vRingbufferReturnItem(handle, item);
+        }
+    }
+
 private:
     size_t          cap;
-    RingbufHandle_t handle = nullptr;
+    RingbufHandle_t handle    = nullptr;
+    uint32_t        dropCount = 0;
+    volatile bool   paused_   = false;
 };
 
 // Defined in main.cpp when BLUETOOTH_MODE is enabled.
@@ -120,6 +162,7 @@ public:
     void setBtLevel(float level) {
         btLevel = clamp01(level);
     }
+
 #endif
 
     void setAudioInfo(AudioInfo ai) override {
@@ -162,13 +205,32 @@ public:
         const int16_t *in = reinterpret_cast<const int16_t *>(data);
 
 #ifdef BLUETOOTH_MODE
-        // Pre-fill BT temp buffer with silence; fill from ring buffer partially.
+        // Pre-fill BT temp buffer with silence; overwrite with ring buffer data.
         std::fill(btTemp.begin(), btTemp.begin() + totalSamples, int16_t(0));
         btAudioBuffer.read(btTemp.data(), totalSamples);
 #endif
 
+#ifdef BLUETOOTH_MODE
+        const bool delayActive = delay->isAllocated();
+#else
+        constexpr bool delayActive = true;
+#endif
+
         for (size_t f = 0; f < frames; ++f) {
             const size_t base = f * static_cast<size_t>(channels);
+
+#ifdef BLUETOOTH_MODE
+            if (!delayActive) {
+                // Delay buffer freed (BT connected): bypass all delay math,
+                // just mix dry + BT directly.
+                for (int ch = 0; ch < channels; ++ch) {
+                    float mixed = dryLevel * static_cast<float>(in[base + ch])
+                                + btLevel  * static_cast<float>(btTemp[base + ch]);
+                    temp16[base + ch] = clamp16(mixed);
+                }
+                continue;
+            }
+#endif
 
             // Compute mono send from average of all channels.
             float monoSum = 0.0f;

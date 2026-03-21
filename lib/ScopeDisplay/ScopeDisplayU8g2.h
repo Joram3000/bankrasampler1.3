@@ -5,9 +5,10 @@
 #include <U8g2lib.h>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include "config.h"
-#include "storage/logo.h" 
+#include "storage/logo.h"
 
 class ScopeDisplayU8g2 {
   private:
@@ -15,7 +16,8 @@ class ScopeDisplayU8g2 {
   TaskHandle_t displayTaskHandle;
   SemaphoreHandle_t displayMutex;
   volatile bool suspended = false;
-  
+  std::function<void(U8G2*)> _hudCallback;
+
   int16_t* waveformBuffer;
   int* waveformIndex;
   int waveformSamples;
@@ -47,7 +49,7 @@ class ScopeDisplayU8g2 {
         if (displayMutex != NULL && xSemaphoreTake(displayMutex, portMAX_DELAY) == pdTRUE) {
           display->clearBuffer();
           renderWaveform();
-    
+          if (_hudCallback) _hudCallback(display);
           display->sendBuffer();
           xSemaphoreGive(displayMutex);
         }
@@ -134,6 +136,10 @@ class ScopeDisplayU8g2 {
     }
   
   public:
+    // HUD callback — called each frame after the waveform is drawn but before
+    // sendBuffer(), so HUD elements appear in the same frame as the waveform.
+    void setHudCallback(std::function<void(U8G2*)> cb) { _hudCallback = std::move(cb); }
+
     // Allow external control of horizontal zoom and vertical scale so UI
     // settings can affect the scope rendering.
     void setHorizZoom(float hz) { horizZoom = hz; }

@@ -21,6 +21,9 @@ float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
 #endif
 float currentDelayFeedback = DEFAULT_DELAY_FEEDBACK;
 
+// Runtime delay maximum, set once after dynamic allocation.
+static uint16_t runtimeMaxDelayMs = 0; // 0 = not yet set
+
 // Settings mode switch state
 bool settingsModeRawState = false;
 bool settingsModeDebouncedState = false;
@@ -59,20 +62,23 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   if (settingsScreen) return;
   settingsDeps = deps;
 
+  // Apply runtime max before creating the screen so the first draw is correct.
+  if (deps.maxDelayMs > 0) runtimeMaxDelayMs = deps.maxDelayMs;
+
   settingsScreen = createSettingsScreen();
   if (!settingsScreen) {
     Serial.println("Settings screen unavailable");
     return;
   }
 
+  // Inform the screen of the runtime delay range immediately.
+  if (runtimeMaxDelayMs > 0) settingsScreen->setDelayTimeMax(static_cast<float>(runtimeMaxDelayMs));
+
   settingsScreen->setZoomCallback([](float zoomFactor) { setScopeHorizZoom(zoomFactor); });
   settingsScreen->setDelayTimeCallback([](float durationMs) {
-#ifdef BLUETOOTH_MODE
-    // In BT mode the delay buffer is smaller — clamp to BT max.
-    const float maxMs = BT_DELAY_TIME_MAX_MS;
-#else
-    const float maxMs = DELAY_TIME_MAX_MS;
-#endif
+    const float maxMs = runtimeMaxDelayMs > 0
+                      ? static_cast<float>(runtimeMaxDelayMs)
+                      : DELAY_TIME_MAX_MS;
     float clamped = durationMs;
     if (clamped < DELAY_TIME_MIN_MS) clamped = DELAY_TIME_MIN_MS;
     if (clamped > maxMs)             clamped = maxMs;
@@ -80,7 +86,7 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
     if (settingsDeps.delayEffect) {
       settingsDeps.delayEffect->setDuration(static_cast<uint16_t>(clamped));
     }
-   });
+  });
   settingsScreen->setDelayFeedbackCallback([](float feedback) {
     currentDelayFeedback = feedback;
     if (settingsDeps.delayEffect) {
@@ -107,6 +113,11 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   });
 
 
+  settingsScreen->setDebugModeCallback([](bool on) {
+    extern bool debugEnabled;
+    debugEnabled = on;
+  });
+
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);
   settingsScreen->setDelayFeedback(currentDelayFeedback);
@@ -114,6 +125,7 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   // seed feedback filter cutoffs from defaults so the UI shows sensible values
   settingsScreen->setFeedbackLowpassCutoff(FB_LOW_PASS_CUTOFF_HZ);
   settingsScreen->setFeedbackHighpassCutoff(FB_HIGH_PASS_CUTOFF_HZ);
+  settingsScreen->setDebugMode(true); // default on
 
   loadSettingsFromSd(settingsScreen);
 }
@@ -194,4 +206,9 @@ void setOperatingMode(OperatingMode mode) {
 
 ISettingsScreen* getSettingsScreen() {
   return settingsScreen;
+}
+
+void setRuntimeMaxDelayMs(uint16_t ms) {
+  runtimeMaxDelayMs = ms;
+  if (settingsScreen) settingsScreen->setDelayTimeMax(static_cast<float>(ms));
 }
