@@ -22,6 +22,7 @@ public:
 		ITEM_FB_HIGHPASS,
 		ITEM_FB_LOWPASS,
 		ITEM_FILTER_Q,
+		ITEM_DEBUG,
 		ITEM_COUNT
 	};
 
@@ -35,6 +36,7 @@ public:
 	void setFeedbackLowpassCutoffCallback(std::function<void(float)> cb) override { feedbackLowpassCutoffCallback = cb; }
 	void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) override { feedbackHighpassCutoffCallback = cb; }
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
+	void setDebugModeCallback(std::function<void(bool)> cb) override { debugModeCallback = cb; }
 
 	void begin() override {}
 
@@ -100,14 +102,21 @@ public:
 	float getFeedbackLowpassCutoff() const override { return feedbackLowpassCutoff; }
 	float getFeedbackHighpassCutoff() const override { return feedbackHighpassCutoff; }
 	float getFilterQ() const override { return filterQ; }
+	bool getDebugMode() const override { return debugMode; }
 	
 	void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
 	void setOneShot(bool oneShot) override { this->oneShot = oneShot; markDirty(); if (oneShotCallback) oneShotCallback(oneShot); }
-	void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
+	void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, delayTimeMaxMs); markDirty(); notifyDelayTimeChanged(); }
+	void setDelayTimeMax(float maxMs) override {
+		delayTimeMaxMs = std::max(DELAY_TIME_MIN_MS, maxMs);
+		delayTimeMs    = clampValue(delayTimeMs, DELAY_TIME_MIN_MS, delayTimeMaxMs);
+		markDirty();
+	}
 	void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
 	void setFeedbackLowpassCutoff(float hz) override { feedbackLowpassCutoff = clampValue(hz, FB_LOW_PASS_MIN_HZ, FB_LOW_PASS_MAX_HZ); markDirty(); if (feedbackLowpassCutoffCallback) feedbackLowpassCutoffCallback(feedbackLowpassCutoff); }
 	void setFeedbackHighpassCutoff(float hz) override { feedbackHighpassCutoff = clampValue(hz, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ); markDirty(); if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
+	void setDebugMode(bool debug) override { debugMode = debug; markDirty(); if (debugModeCallback) debugModeCallback(debug); }
 private:
     U8G2 &u8g2;
     bool active = false;
@@ -119,12 +128,14 @@ private:
     unsigned long lastDrawMs = 0;
     uint8_t selection = 0;
 
-	float delayTimeMs = DEFAULT_DELAY_TIME_MS;
+	float delayTimeMs    = DEFAULT_DELAY_TIME_MS;
+	float delayTimeMaxMs = DELAY_TIME_MAX_MS;
 	bool oneShot = false;
 	float delayFeedback = DEFAULT_DELAY_FEEDBACK;
 	float feedbackLowpassCutoff = FB_LOW_PASS_CUTOFF_HZ;
 	float feedbackHighpassCutoff = FB_HIGH_PASS_CUTOFF_HZ;
 	float filterQ = LOW_PASS_Q;
+	bool debugMode = true;
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(bool)> oneShotCallback;
@@ -133,6 +144,7 @@ private:
 	std::function<void(float)> feedbackLowpassCutoffCallback;
 	std::function<void(float)> feedbackHighpassCutoffCallback;
 	std::function<void(float)> filterQCallback;
+	std::function<void(bool)> debugModeCallback;
 
 	void markDirty() { dirty = true; }
 	void notifyZoomChanged() { if (zoomCallback) zoomCallback(zoom); }
@@ -151,7 +163,7 @@ private:
                  }
                  break;
             case ITEM_DELAY_TIME:
-				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, [this]{ notifyDelayTimeChanged(); });
+				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, delayTimeMaxMs, DELAY_TIME_STEP_MS, [this]{ notifyDelayTimeChanged(); });
                 break;
             case ITEM_DELAY_FEEDBACK:
 				applyAdjustment(delayFeedback, delta, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX, DELAY_FEEDBACK_STEP, [this]{ notifyDelayFeedbackChanged(); });
@@ -164,6 +176,9 @@ private:
 				break;
 			case ITEM_FILTER_Q:
 				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, [this]{ notifyFilterQChanged(); });
+				break;
+			case ITEM_DEBUG:
+				if (delta != 0) setDebugMode(!debugMode);
 				break;
          }
      }
@@ -187,7 +202,8 @@ private:
 			"Delay fb",
 			"FB HP",
 			"FB LP",
-			"Filter Q"
+			"Filter Q",
+			"Debug"
 		};
 		const int rowHeight = 10;
 		const int highlightHeight = rowHeight + 2;
@@ -227,6 +243,7 @@ private:
 				case ITEM_FB_HIGHPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackHighpassCutoff); break;
 				case ITEM_FB_LOWPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackLowpassCutoff); break;
 				case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
+				case ITEM_DEBUG: snprintf(valbuf, sizeof(valbuf), "%s", debugMode ? "On" : "Off"); break;
 			}
 			int vx = u8g2.getDisplayWidth() - (int)strlen(valbuf) * 6 - 4;
 			u8g2.drawStr(vx, baseline, valbuf);

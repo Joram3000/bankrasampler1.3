@@ -29,6 +29,7 @@ public:
 	virtual void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) = 0;
 	
 	virtual void setFilterQCallback(std::function<void(float)> cb) = 0;
+	virtual void setDebugModeCallback(std::function<void(bool)> cb) = 0;
 
 	// Get current feedback filter cutoff values (UI -> persistence)
 	virtual float getFeedbackLowpassCutoff() const = 0;
@@ -40,13 +41,19 @@ public:
 	virtual float getDelayTimeMs() const = 0;
 	virtual float getDelayFeedback() const = 0;
 	virtual float getFilterQ() const = 0;
+	virtual bool getDebugMode() const = 0;
 	
 	virtual void setZoom(float zoom) = 0;
 	virtual void setOneShot(bool oneShot) = 0;
 	virtual void setDelayTimeMs(float ms) = 0;
 	virtual void setFilterQ(float q) = 0;
+	virtual void setDebugMode(bool debug) = 0;
 
 	virtual void setDelayFeedback(float feedback) = 0;
 	virtual void setFeedbackLowpassCutoff(float hz) = 0;
 	virtual void setFeedbackHighpassCutoff(float hz) = 0;
+
+	// Override the maximum adjustable delay time at runtime (e.g. after
+	// dynamic heap measurement). Clamped values in the UI will update accordingly.
+	virtual void setDelayTimeMax(float maxMs) = 0;
 };

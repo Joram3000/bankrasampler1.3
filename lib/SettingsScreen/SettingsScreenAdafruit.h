@@ -96,6 +96,7 @@ public:
     void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
     void setFeedbackLowpassCutoff(float hz) override { feedbackLowpassCutoff = clampValue(hz, FB_LOW_PASS_MIN_HZ, FB_LOW_PASS_MAX_HZ); markDirty(); if (feedbackLowpassCutoffCallback) feedbackLowpassCutoffCallback(feedbackLowpassCutoff); }
     void setFeedbackHighpassCutoff(float hz) override { feedbackHighpassCutoff = clampValue(hz, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ); markDirty(); if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); }
+    void setDelayTimeMax(float) override {} // unused in this backend
 
 private:
     Adafruit_SSD1306 &gfx;
