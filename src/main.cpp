@@ -267,14 +267,20 @@ static void initInputControls() {
 }
 
 void setup() {
+  // hier nog even naar kijken
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // brownout detector uitgeschakeld
   Serial.begin(115200);
-  AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
+   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
+  delay(500);
 
-  InitDisplay();  
+  InitDisplay();
+  delay(200);
   initSd();
+  delay(200);
   setMuxChangeCallback(onMuxChange);
   initMuxScanner(5000);
   initInputControls();
+  delay(200);
   initAudio();
   initPlayer();
 
