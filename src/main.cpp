@@ -131,11 +131,15 @@ static void audioTask(void *) {
             fadingOut        = false;
 #ifdef BLUETOOTH_MODE
             if (btConnected && btDirectMode) {
-                // Switch from direct I2S to ring-buffer mode so the mixer
-                // can combine sample audio + BT audio together.
-                // Ring buffer is already warm (callback always writes to it,
-                // idle drain keeps it fresh) — no gap in BT audio.
+                // Flip the flag first so the BT callback stops writing to I2S.
+                // A memory barrier ensures Core 0 sees the updated flag before
+                // audioTask (Core 1) starts writing to I2S via player.copy().
                 btDirectMode = false;
+                __sync_synchronize();
+                // Wait 2 ms so any in-flight scopeI2s.write() on Core 0
+                // finishes before audioTask takes over as sole I2S writer.
+                // The I2S DMA has ~92 ms of headroom, so this gap is safe.
+                vTaskDelay(pdMS_TO_TICKS(2));
             }
 #endif
             player.setPath(SAMPLE_PATHS[playIdx]);
@@ -183,17 +187,16 @@ static void audioTask(void *) {
 #ifdef BLUETOOTH_MODE
             if (btConnected) {
                 if (!btDirectMode) {
-                    // Ring-buffer mode but no sample — switch back to direct.
-                    // This happens when a sample finishes while BT is connected.
+                    // Sample just finished — switch back to direct mode.
+                    // BT callback will now write straight to I2S again.
                     btDirectMode = true;
+                    // Discard any BT data that accumulated in the ring buffer
+                    // during playback so it does not leak into the next sample.
+                    btAudioBuffer.clear();
                     if (DEBUGMODE)
                         Serial.println(F("[BT] Sample done, back to direct mode"));
                 }
-                // Direct mode: BT callback writes to I2S at 44100 Hz.
-                // Drain the ring buffer to prevent it filling up (callback
-                // always writes to it). This keeps it "warm" with recent data
-                // so the transition to mixing mode is seamless.
-                btAudioBuffer.clear();
+                // In direct mode the BT callback owns I2S — nothing to do here.
             } else {
                 mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
             }
@@ -500,17 +503,15 @@ static void initInputControls() {
 #ifdef BLUETOOTH_MODE
 // --- Bluetooth callbacks -----------------------------------------------------
 static void btAudioDataCallback(const uint8_t *data, uint32_t length) {
-    // Always feed ring buffer so it stays "warm" with recent data.
-    // This ensures smooth transitions when a sample starts playing —
-    // the mixer can read from a pre-filled buffer without a BT audio gap.
-    btAudioBuffer.write(data, length);
-
     if (btDirectMode) {
-        // Direct path (no sample playing): also write straight to I2S + scope.
-        // This is the AudioTools recommended approach (basic-a2dp-i2s.ino).
-        // The BT stack delivers data at exactly 44100 Hz stereo 16-bit,
-        // so I2S DMA consumption matches perfectly — no rate control needed.
+        // Direct path (no sample playing): BT callback is the sole I2S writer.
+        // Write straight to I2S — no ring buffer involvement so there is no
+        // double-write and no unnecessary ring buffer contention.
         scopeI2s.write(data, length);
+    } else {
+        // Mixer path (sample playing): audioTask owns I2S.
+        // Feed ring buffer so the mixer can combine dry + BT audio.
+        btAudioBuffer.write(data, length);
     }
 }
 
