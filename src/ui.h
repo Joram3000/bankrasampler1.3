@@ -9,17 +9,12 @@ extern ScopeI2SStream scopeI2s;
 // Initialize display and scope. Returns true on success.
 bool initUi();
 
-// Expose the underlying display objects so other modules (e.g. settings
-// screens) can draw to the display using the same hardware instance. Each
-// accessor returns nullptr when its corresponding backend is not active.
+// Expose the U8g2 display object for settings screens and other modules.
 class U8G2; // forward
 U8G2* getU8g2Display();
-class Adafruit_SSD1306; // forward
-Adafruit_SSD1306* getAdafruitDisplay();
 
 // Expose the display mutex used by the scope display task so callers can
-// safely take the mutex before drawing directly. Returns nullptr when not
-// available.
+// safely take the mutex before drawing directly.
 void* getDisplayMutex();
 
 // Adjust scope drawing parameters from other modules
@@ -28,10 +23,17 @@ void setScopeHorizZoom(float z);
 // Temporarily pause/resume the scope task when drawing custom overlays.
 void setScopeDisplaySuspended(bool suspended);
 
-// Settings screen factory (display-backend dependent).
+// Settings screen factory.
 class ISettingsScreen; // forward
 ISettingsScreen* createSettingsScreen();
 
-// Toon splash/logo en blokkeer scope-updates totdat hideSplash() wordt aangeroepen.
+// Show splash/logo and block scope updates until hideSplash() is called.
 void showSplash();
 void hideSplash();
+
+// HUD state setters — safe to call from any task; reads happen in display task.
+// Delay indicator shown bottom-left; pot value shown bottom-right.
+// BT connected message shown top-center when connected.
+void setHudDelayEnabled(bool on);
+void setHudPotValue(float normalizedValue, bool isFilter);  // 0..1
+void setHudBtConnected(bool connected);

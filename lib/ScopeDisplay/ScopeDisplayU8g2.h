@@ -5,9 +5,10 @@
 #include <U8g2lib.h>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include "config.h"
-#include "storage/logo.h" 
+#include "storage/logo.h"
 
 class ScopeDisplayU8g2 {
   private:
@@ -15,13 +16,12 @@ class ScopeDisplayU8g2 {
   TaskHandle_t displayTaskHandle;
   SemaphoreHandle_t displayMutex;
   volatile bool suspended = false;
-  
+  std::function<void(U8G2*)> _hudCallback;
+
   int16_t* waveformBuffer;
   int* waveformIndex;
   int waveformSamples;
   
-  const bool useSmoothing = false; // naar settings?
-  const float smoothingAlpha = 0.2f;// kan weg?
   
   float horizZoom = DEFAULT_HORIZ_ZOOM;
     float vertScale = DEFAULT_VERT_SCALE;
@@ -49,13 +49,13 @@ class ScopeDisplayU8g2 {
         if (displayMutex != NULL && xSemaphoreTake(displayMutex, portMAX_DELAY) == pdTRUE) {
           display->clearBuffer();
           renderWaveform();
-    
+          if (_hudCallback) _hudCallback(display);
           display->sendBuffer();
           xSemaphoreGive(displayMutex);
         }
 
-        // throttle update rate
-        vTaskDelay(40 / portTICK_PERIOD_MS);
+        // ~50 fps — keep low enough that BT stack (prio 5) is never starved
+        vTaskDelay(20 / portTICK_PERIOD_MS);
       }
     }
 
@@ -93,27 +93,15 @@ class ScopeDisplayU8g2 {
       for (int i = 0; i < kNumOverlays; ++i) prevYs[i] = NAN;
 
       // Helper to draw one overlay given multiplier and prevY reference
+      // (Simplified — no exponential smoothing)
       auto drawOverlay = [&](int x, float yValue, float &prevY) {
-        if (useSmoothing) {
-          if (!isfinite(prevY)) prevY = yValue;
-          float smoothY = (smoothingAlpha * yValue) + ((1.0f - smoothingAlpha) * prevY);
-          int yPrev = constrain(static_cast<int>(round(prevY)), 0, kScreenHeight - 1);
-          int yCur  = constrain(static_cast<int>(round(smoothY)), 0, kScreenHeight - 1);
-          if (x == 0) {
-            display->drawPixel(x, yCur);
-          } else {
-            display->drawLine(x - 1, yPrev, x, yCur);
-          }
-          prevY = smoothY;
+        int y = constrain(static_cast<int>(round(yValue)), 0, kScreenHeight - 1);
+        if (!isfinite(prevY)) {
+          display->drawPixel(x, y);
         } else {
-          int y = constrain(static_cast<int>(round(yValue)), 0, kScreenHeight - 1);
-          if (!isfinite(prevY)) {
-            display->drawPixel(x, y);
-          } else {
-            display->drawLine(x - 1, static_cast<int>(round(prevY)), x, y);
-          }
-          prevY = static_cast<float>(y);
+          display->drawLine(x - 1, static_cast<int>(round(prevY)), x, y);
         }
+        prevY = static_cast<float>(y);
       };
 
       for (int x = 0; x < kScreenWidth; ++x) {
@@ -148,6 +136,10 @@ class ScopeDisplayU8g2 {
     }
   
   public:
+    // HUD callback — called each frame after the waveform is drawn but before
+    // sendBuffer(), so HUD elements appear in the same frame as the waveform.
+    void setHudCallback(std::function<void(U8G2*)> cb) { _hudCallback = std::move(cb); }
+
     // Allow external control of horizontal zoom and vertical scale so UI
     // settings can affect the scope rendering.
     void setHorizZoom(float hz) { horizZoom = hz; }
@@ -203,7 +195,7 @@ class ScopeDisplayU8g2 {
         "ScopeDisplayU8G2",
         4096,   
         this,
-        1,
+        2,      // prio 2: above inputTask (1), below BT stack (5)
         &displayTaskHandle,
         0
       );

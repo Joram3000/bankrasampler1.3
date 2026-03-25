@@ -5,7 +5,11 @@
 #include <cstdint>
 #include "pins.h"
 
-#define DEBUGMODE 1
+// Runtime debug toggle — controlled from settings screen.
+// When true, serial diagnostic prints are active.
+// When false, prints are suppressed (reduces CPU overhead / dropout risk).
+extern bool debugEnabled;
+#define DEBUGMODE debugEnabled
 
 constexpr size_t BUTTON_COUNT = BUTTON_CHANNEL_ON_MUX.size();
 constexpr bool MUX_ACTIVE_LOW = true;
@@ -24,7 +28,10 @@ constexpr uint32_t BUTTON_DEBOUNCE_MS = 4;
 constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 10;
 constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 4;
 
-static const size_t kScopeSilenceFramesPerLoop = 64; // number of silence frames to feed per loop when no audio
+// Silence frames pumped per audioTask tick when player is inactive.
+// Must be enough to keep the I2S buffer (512 frames) filled within the task period (6 ms).
+// 6 ms @ 44100 Hz = ~265 frames. Use 128 as a conservative value — task runs fast enough.
+static const size_t kScopeSilenceFramesPerLoop = 128;
   
 #define POT_POLARITY_INVERTED 1
 
