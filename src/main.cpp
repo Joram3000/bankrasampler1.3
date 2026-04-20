@@ -1,4 +1,5 @@
 #include <SPI.h>
+#include "soc/rtc_cntl_reg.h"
 #include <SD.h>
 #include <Wire.h>
 #include <AudioTools.h>
@@ -6,16 +7,46 @@
 #include "audio_mixer.h"
 #include "prealloc_delay.h"
 #include "input/button.h"
+#include "input/button_wizard.h"
 #include "ui.h"
 #include "storage/settings_storage.h"
+#include "storage/pin_config_storage.h"
 #include "settings_mode.h"
 #include "input/mux.h"
 #include "config/config.h"
 #include "config/settings.h"
 #include "SettingsScreen.h"
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+// --- Runtime pin configuration (defaults come from pins.h) ------------------
+std::array<uint8_t, BUTTON_COUNT> runtimeButtonChannels = BUTTON_CHANNEL_ON_MUX;
+uint8_t runtimeSwitchDelayChannel  = SWITCH_CHANNEL_DELAY_SEND;
+uint8_t runtimeSwitchFilterChannel = SWITCH_CHANNEL_FILTER_ENABLE;
+bool    runtimeMuxActiveLow        = MUX_ACTIVE_LOW_DEFAULT;
+bool    runtimePotInverted         = false;
 
 #ifdef BLUETOOTH_MODE
   #include <BluetoothA2DPSink.h>
+  // Runtime toggle — loaded from settings.txt before BT init.
+  // false = BT stack never started, full heap available for delay.
+  bool btEnabled = DEFAULT_BT_ENABLED;
+
+  // Read bt_enabled from settings.txt early — before BT init.
+  static bool loadBtEnabledFromSd() {
+    if (!SD.exists("/settings.txt")) return DEFAULT_BT_ENABLED;
+    File f = SD.open("/settings.txt", FILE_READ);
+    if (!f) return DEFAULT_BT_ENABLED;
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      if (line.startsWith("bt_enabled=")) {
+        f.close();
+        return line.substring(11).toInt() != 0;
+      }
+    }
+    f.close();
+    return DEFAULT_BT_ENABLED;
+  }
   // BT audio ringbuffer — 8 KB = ~45 ms at 44100 Hz stereo 16-bit.
   // A2DP bursts are ~4–8 KB every ~20 ms; audioTask drains every 1 ms so
   // 8 KB (2× burst) is ample. Keeping this small leaves heap for the BT
@@ -88,6 +119,7 @@ float           smoothedCutoff         = filterCutoff;
 void playSample(int index);
 void stopSample(int index);
 static void initInputControls();
+static uint16_t computeMaxDelayMs(bool btActive = false);
 
 // --- Audio task (Core 1, prio 5) --------------------------------------------
 // Sole writer to player/mixer. Communicates with inputTask via volatile flags.
@@ -111,15 +143,20 @@ static void audioTask(void *) {
                               ESP.getFreeHeap());
         }
         // BT disconnect: restore delay + switch state, exit direct mode.
+        // Re-compute the maximum delay now that the BT stack heap is freed —
+        // typically allows a much larger buffer than during BT operation.
         if (pendingBtDisconnect) {
             pendingBtDisconnect = false;
             btDirectMode = false;
             btAudioBuffer.clear();
-            delayEffect1.reallocate();
+            uint16_t newMaxMs = computeMaxDelayMs(false);
+            delayEffect1.reallocate(newMaxMs);
             mixer.sendEnabled(switchDelaySendEnabled);
+            // Inform the settings UI so the delay-time slider reflects the new range.
+            setRuntimeMaxDelayMs(newMaxMs);
             if (DEBUGMODE)
-                Serial.printf("[AUDIO] BT disconnected — delay reallocated, heap=%d\n",
-                              ESP.getFreeHeap());
+                Serial.printf("[AUDIO] BT disconnected — delay reallocated max=%u ms, heap=%d\n",
+                              newMaxMs, ESP.getFreeHeap());
         }
 #endif
 
@@ -291,14 +328,14 @@ void updateCutoff(float target) {
 
 // --- Mux change callback ----------------------------------------------------
 static void onMuxChange(uint8_t channel, bool active) {
-    if (channel == SWITCH_CHANNEL_FILTER_ENABLE && active != switchFilterEnabled) {
+    if (channel == runtimeSwitchFilterChannel && active != switchFilterEnabled) {
         switchFilterEnabled = active;
         setHudPotValue(lastVol < 0.0f ? 0.0f : lastVol, active);
         if (DEBUGMODE) Serial.printf("[MUX] Filter: %s\n", active ? "ON" : "OFF");
         return;
     }
 
-    if (channel == SWITCH_CHANNEL_DELAY_SEND && active != switchDelaySendEnabled) {
+    if (channel == runtimeSwitchDelayChannel && active != switchDelaySendEnabled) {
         switchDelaySendEnabled = active;
         setHudDelayEnabled(active);
         if (DEBUGMODE) Serial.printf("[MUX] Delay send: %s\n", active ? "ON" : "OFF");
@@ -380,10 +417,18 @@ void initAudio() {
 // Compute how much delay we can safely allocate given the current free heap.
 // Called after BT init so BT heap consumption is already accounted for.
 // Keeps SAFETY_BYTES free for runtime allocations (BT queues, SD lib, stacks).
-static uint16_t computeMaxDelayMs() {
-    constexpr uint32_t SAFETY_BYTES = 45 * 1024; // keep 45 KB free after alloc
+//
+// btActive: true  -> BT stack is running (needs ~20 KB headroom for queues/events)
+//           false -> no BT, less headroom needed
+static uint16_t computeMaxDelayMs(bool btActive) {
+    // With BT running we need more headroom: the BT stack allocates small
+    // chunks during connect/disconnect events. Without BT we only need room
+    // for SD lib, FreeRTOS housekeeping, and UI — 20 KB is ample.
+    // BT audio streaming needs ~30 KB for A2DP decoder + jitter buffers at runtime.
+    // Without BT, 15 KB covers SD lib + FreeRTOS housekeeping.
+    const uint32_t SAFETY_BYTES = btActive ? (30 * 1024) : (15 * 1024);
     constexpr uint16_t ABS_MIN_MS   = 50;
-    constexpr uint16_t ABS_MAX_MS   = 600;
+    const uint16_t ABS_MAX_MS       = btActive ? 300 : 750;
 
     uint32_t freeHeap = ESP.getFreeHeap();
     if (freeHeap <= SAFETY_BYTES) return ABS_MIN_MS;
@@ -428,7 +473,7 @@ void initSd() {
     SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SD_CS_PIN);
 
     int attempts = 0;
-    while (!SD.begin(SD_CS_PIN, SPI, 80000000UL) && attempts < 5) {
+    while (!SD.begin(SD_CS_PIN, SPI, 25000000UL) && attempts < 5) {
         Serial.println(F("[SD] Card failed, retrying..."));
         delay(100);
         ++attempts;
@@ -445,9 +490,7 @@ void checkPot(uint32_t now) {
     lastPotRead = now;
 
     int raw = analogRead(POT_PIN);
-#ifdef POT_POLARITY_INVERTED
-    raw = 4095 - raw;
-#endif
+    if (runtimePotInverted) raw = 4095 - raw;
     float norm = constrain(raw, 0, 4095) / 4095.0f;
 
     if (switchFilterEnabled) {
@@ -468,17 +511,15 @@ void checkPot(uint32_t now) {
 static void initInputControls() {
     initSettingsModeSwitch();
 
-    bool filterState = readMuxActiveState(SWITCH_CHANNEL_FILTER_ENABLE);
-    bool delayState  = readMuxActiveState(SWITCH_CHANNEL_DELAY_SEND);
+    bool filterState = readMuxActiveState(runtimeSwitchFilterChannel);
+    bool delayState  = readMuxActiveState(runtimeSwitchDelayChannel);
 
-    onMuxChange(SWITCH_CHANNEL_FILTER_ENABLE, filterState);
-    onMuxChange(SWITCH_CHANNEL_DELAY_SEND, delayState);
+    onMuxChange(runtimeSwitchFilterChannel, filterState);
+    onMuxChange(runtimeSwitchDelayChannel, delayState);
 
     // Bootstrap pot so volume/filter is correct from the very first frame.
     int raw = analogRead(POT_PIN);
-#ifdef POT_POLARITY_INVERTED
-    raw = 4095 - raw;
-#endif
+    if (runtimePotInverted) raw = 4095 - raw;
     float norm = constrain(raw, 0, 4095) / 4095.0f;
 
     if (filterState) {
@@ -561,35 +602,68 @@ static void initBluetooth() {
     // Disable auto-reconnect — heap fragmentation during reconnect can stall
     // the audio task long enough to cause a burst of crackle.
     a2dp_sink.set_auto_reconnect(false);
-    a2dp_sink.start("BANKRAKAKA");
+    // Unique BT name per unit using last 3 bytes of MAC address.
+    // Static so the pointer remains valid for the lifetime of the A2DP sink.
+    static char btName[20];
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_BT);
+    snprintf(btName, sizeof(btName), "BANKRAKAKA-%02X%02X%02X", mac[3], mac[4], mac[5]);
+    a2dp_sink.start(btName);
 
     if (DEBUGMODE)
         Serial.printf("[BT] Heap after A2DP start: %d\n", ESP.getFreeHeap());
 
-    Serial.println(F("[BT] A2DP sink started as 'BANKRAKAKA'"));
+    Serial.printf("[BT] A2DP sink started as '%s'\n", btName);
 }
 #endif // BLUETOOTH_MODE
 
 // --- Setup ------------------------------------------------------------------
 void setup() {
-    Serial.begin(115200);
-    AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Warning);
 
-    initDisplay();
-    initSd();
-    setMuxChangeCallback(onMuxChange);
-    initMuxScanner(5000);
-    initAudio();
-    initInputControls();
-    initPlayer();
+      WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Brownout detector uitzetten
+//   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // brownout detector uit — BT init stroompiek
+  Serial.begin(115200);
+   AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
+  delay(800);      // rust voor voeding na Serial.begin / power-on
+  initSd();
+  delay(300);
+  initDisplay();
+  delay(200);
+
+  // Apply button channels from compile-time defaults into runtime button array.
+  for (int i = 0; i < (int)BUTTON_COUNT; ++i)
+    setButtonChannel(i, runtimeButtonChannels[i]);
+
+  // Load saved pin config from SD, or run the wizard if none exists.
+  setMuxChangeCallback(onMuxChange);
+  initMuxScanner(5000);
+  if (!loadPinConfigFromSd()) {
+    runButtonWizard();
+  }
+
+  initInputControls();
+  delay(200);
+  initAudio();
+  initPlayer();
 
 #ifdef BLUETOOTH_MODE
-    // BT init before delay allocation so computeMaxDelayMs() accounts for BT heap.
-    initBluetooth();
+    btEnabled = loadBtEnabledFromSd();
+    Serial.printf("[BT] bt_enabled=%d (from settings)\n", btEnabled);
+    if (btEnabled) {
+        // BT init before delay allocation so computeMaxDelayMs() accounts for BT heap.
+        delay(500); // rust voor BT radio init — voorkomt brownout door stroompiek
+        initBluetooth();
+    } else {
+        Serial.println("[BT] Disabled via settings — skipping BT init");
+    }
 #endif
 
     // Allocate delay based on remaining heap (after BT if applicable).
-    uint16_t dynMaxMs = computeMaxDelayMs();
+#ifdef BLUETOOTH_MODE
+    uint16_t dynMaxMs = computeMaxDelayMs(btEnabled);
+#else
+    uint16_t dynMaxMs = computeMaxDelayMs(false);
+#endif
     initDelayAndMixer(dynMaxMs);
 
     SettingsUiDependencies settingsDeps;

@@ -46,6 +46,21 @@ class PreallocDelay : public audio_tools::AudioEffect {
     setActive(true);
   }
 
+  // Herinitialiseer met een nieuw maximum (groter of kleiner dan bij boot).
+  // Gebruik dit bijv. na BT disconnect om meer heap te benutten.
+  void reallocate(uint16_t newMaxMs) {
+    maxDelayMs_ = newMaxMs;
+    // Clamp huidige duration zodat die niet boven het nieuwe maximum uitkomt.
+    if (durationMs_ > maxDelayMs_) durationMs_ = maxDelayMs_;
+    allocateBuffer();
+    updateDelaySamples();
+    updateFeedbackFilterCoeff();
+    resetFilterState();
+    setActive(true);
+  }
+
+  uint16_t getMaxDelayMs() const { return maxDelayMs_; }
+
   bool isAllocated() const { return !buffer_.empty(); }
 
   PreallocDelay* clone() override { return new PreallocDelay(*this); }

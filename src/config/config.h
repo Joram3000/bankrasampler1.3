@@ -11,8 +11,18 @@
 extern bool debugEnabled;
 #define DEBUGMODE debugEnabled
 
-constexpr size_t BUTTON_COUNT = BUTTON_CHANNEL_ON_MUX.size();
-constexpr bool MUX_ACTIVE_LOW = true;
+constexpr size_t BUTTON_COUNT = 6;
+
+// Runtime pin configuration — overrides the compile-time defaults in pins.h
+// once loaded from /pin_config.txt on the SD card (or set by the wizard).
+// Defaults come from pins.h and are copied into these at startup.
+extern std::array<uint8_t, BUTTON_COUNT> runtimeButtonChannels;
+extern uint8_t runtimeSwitchDelayChannel;
+extern uint8_t runtimeSwitchFilterChannel;
+extern bool    runtimeMuxActiveLow;
+
+// Keep compile-time constant for code that needs it before setup() runs.
+constexpr bool MUX_ACTIVE_LOW_DEFAULT = true;
 
 constexpr const char* SAMPLE_PATHS[] = {
     "/1.wav",
@@ -33,7 +43,10 @@ constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 4;
 // 6 ms @ 44100 Hz = ~265 frames. Use 128 as a conservative value — task runs fast enough.
 static const size_t kScopeSilenceFramesPerLoop = 128;
   
-#define POT_POLARITY_INVERTED 1
+// Runtime pot polarity — true = inverted (raw = 4095 - analogRead).
+// Replaces the old compile-time #define POT_POLARITY_INVERTED.
+// Set from pin_config.txt or toggled via the settings screen.
+extern bool runtimePotInverted;
 
 constexpr uint32_t POT_READ_INTERVAL_MS = 40;
 static const uint32_t SETTINGS_POLL_INTERVAL_MS = 80;

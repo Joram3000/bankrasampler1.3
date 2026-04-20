@@ -23,6 +23,8 @@ public:
 		ITEM_FB_LOWPASS,
 		ITEM_FILTER_Q,
 		ITEM_DEBUG,
+		ITEM_POT_INVERTED,
+		ITEM_BT_ENABLED,
 		ITEM_COUNT
 	};
 
@@ -37,6 +39,8 @@ public:
 	void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) override { feedbackHighpassCutoffCallback = cb; }
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
 	void setDebugModeCallback(std::function<void(bool)> cb) override { debugModeCallback = cb; }
+	void setPotInvertedCallback(std::function<void(bool)> cb) override { potInvertedCallback = cb; }
+	void setBtEnabledCallback(std::function<void(bool)> cb) override { btEnabledCallback = cb; }
 
 	void begin() override {}
 
@@ -103,6 +107,8 @@ public:
 	float getFeedbackHighpassCutoff() const override { return feedbackHighpassCutoff; }
 	float getFilterQ() const override { return filterQ; }
 	bool getDebugMode() const override { return debugMode; }
+	bool getPotInverted() const override { return potInverted; }
+	bool getBtEnabled() const override { return btEnabled; }
 	
 	void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
 	void setOneShot(bool oneShot) override { this->oneShot = oneShot; markDirty(); if (oneShotCallback) oneShotCallback(oneShot); }
@@ -117,6 +123,8 @@ public:
 	void setFeedbackHighpassCutoff(float hz) override { feedbackHighpassCutoff = clampValue(hz, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ); markDirty(); if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
 	void setDebugMode(bool debug) override { debugMode = debug; markDirty(); if (debugModeCallback) debugModeCallback(debug); }
+	void setPotInverted(bool inv) override { potInverted = inv; markDirty(); if (potInvertedCallback) potInvertedCallback(inv); }
+	void setBtEnabled(bool en) override { btEnabled = en; markDirty(); if (btEnabledCallback) btEnabledCallback(en); }
 private:
     U8G2 &u8g2;
     bool active = false;
@@ -136,6 +144,8 @@ private:
 	float feedbackHighpassCutoff = FB_HIGH_PASS_CUTOFF_HZ;
 	float filterQ = LOW_PASS_Q;
 	bool debugMode = true;
+	bool potInverted = false;
+	bool btEnabled = DEFAULT_BT_ENABLED;
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(bool)> oneShotCallback;
@@ -145,6 +155,8 @@ private:
 	std::function<void(float)> feedbackHighpassCutoffCallback;
 	std::function<void(float)> filterQCallback;
 	std::function<void(bool)> debugModeCallback;
+	std::function<void(bool)> potInvertedCallback;
+	std::function<void(bool)> btEnabledCallback;
 
 	void markDirty() { dirty = true; }
 	void notifyZoomChanged() { if (zoomCallback) zoomCallback(zoom); }
@@ -180,6 +192,12 @@ private:
 			case ITEM_DEBUG:
 				if (delta != 0) setDebugMode(!debugMode);
 				break;
+			case ITEM_POT_INVERTED:
+				if (delta != 0) setPotInverted(!potInverted);
+				break;
+			case ITEM_BT_ENABLED:
+				if (delta != 0) setBtEnabled(!btEnabled);
+				break;
          }
      }
  
@@ -203,7 +221,9 @@ private:
 			"FB HP",
 			"FB LP",
 			"Filter Q",
-			"Debug"
+			"Debug",
+			"Pot inv",
+			"BT (reboot)"
 		};
 		const int rowHeight = 10;
 		const int highlightHeight = rowHeight + 2;
@@ -244,6 +264,8 @@ private:
 				case ITEM_FB_LOWPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackLowpassCutoff); break;
 				case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
 				case ITEM_DEBUG: snprintf(valbuf, sizeof(valbuf), "%s", debugMode ? "On" : "Off"); break;
+				case ITEM_POT_INVERTED: snprintf(valbuf, sizeof(valbuf), "%s", potInverted ? "On" : "Off"); break;
+				case ITEM_BT_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", btEnabled ? "On" : "Off"); break;
 			}
 			int vx = u8g2.getDisplayWidth() - (int)strlen(valbuf) * 6 - 4;
 			u8g2.drawStr(vx, baseline, valbuf);

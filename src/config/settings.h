@@ -14,6 +14,9 @@ constexpr float DELAY_TIME_MAX_MS        = 300.0f;
 // BT mode: shorter delay to free ~13 KB of heap for the Bluetooth stack
 constexpr float BT_DELAY_TIME_MAX_MS    = 150.0f;
 constexpr float BT_DEFAULT_DELAY_TIME_MS = 120.0f;
+
+// Default BT enabled state (overridden by settings.txt on SD card).
+constexpr bool DEFAULT_BT_ENABLED = true;
 constexpr float DELAY_TIME_STEP_MS       = 10.0f;
 
 constexpr float DEFAULT_DELAY_FEEDBACK   = 0.8f;
@@ -22,7 +25,7 @@ constexpr float DELAY_FEEDBACK_MAX       = 0.99f;
 constexpr float DELAY_FEEDBACK_STEP      = 0.02f;
 
 // low pass filter defaults
-constexpr float LOW_PASS_CUTOFF_HZ = 777.0f;
+constexpr float LOW_PASS_CUTOFF_HZ = 777.0f;  
 constexpr float LOW_PASS_MIN_HZ    = 150.0f;
 constexpr float LOW_PASS_MAX_HZ    = 4500.0f;
 

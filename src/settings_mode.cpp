@@ -2,15 +2,20 @@
 #include "config/config.h"
 #include "config/settings.h"
 #include "storage/settings_storage.h"
+#include "storage/pin_config_storage.h"
 #include "ui.h"
 #include "SettingsScreen.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <Arduino.h>
 
 namespace {
 ISettingsScreen* settingsScreen = nullptr;
 OperatingMode currentMode = OperatingMode::Performance;
+#ifdef BLUETOOTH_MODE
+bool btEnabledAtBoot = DEFAULT_BT_ENABLED;
+#endif
 
 // Persisted settings state (used to seed UI on boot)
 float currentFilterQ = LOW_PASS_Q;
@@ -49,6 +54,13 @@ void applyOperatingModeChange(OperatingMode newMode) {
       if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
       if (currentMode == OperatingMode::Settings) {
         saveSettingsToSd(settingsScreen);
+#ifdef BLUETOOTH_MODE
+        if (settingsScreen && settingsScreen->getBtEnabled() != btEnabledAtBoot) {
+          Serial.println("[BT] bt_enabled changed — rebooting...");
+          delay(200);
+          ESP.restart();
+        }
+#endif
       }
     }
   
@@ -118,6 +130,15 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
     debugEnabled = on;
   });
 
+#ifdef BLUETOOTH_MODE
+  settingsScreen->setBtEnabledCallback([](bool on) {
+    extern bool btEnabled;
+    btEnabled = on;
+  });
+#else
+  settingsScreen->setBtEnabledCallback(nullptr);
+#endif
+
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);
   settingsScreen->setDelayFeedback(currentDelayFeedback);
@@ -127,7 +148,21 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   settingsScreen->setFeedbackHighpassCutoff(FB_HIGH_PASS_CUTOFF_HZ);
   settingsScreen->setDebugMode(true); // default on
 
+  // Seed pot polarity without triggering the save callback.
+  settingsScreen->setPotInvertedCallback(nullptr);
+  settingsScreen->setPotInverted(runtimePotInverted);
+  settingsScreen->setPotInvertedCallback([](bool inv) {
+    runtimePotInverted = inv;
+    savePinConfigToSd();
+  });
+
   loadSettingsFromSd(settingsScreen);
+
+#ifdef BLUETOOTH_MODE
+  // Record the bt_enabled state as it was when the device booted,
+  // so we can detect a change and trigger a reboot on settings exit.
+  btEnabledAtBoot = settingsScreen->getBtEnabled();
+#endif
 }
 
 void initSettingsModeSwitch() {

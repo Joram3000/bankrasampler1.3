@@ -18,13 +18,23 @@ constexpr int INPUT_MUX_PIN_Y = 17;
 constexpr int POT_PIN                = 34;
 constexpr int SWITCH_PIN_SETTINGS_MODE = 35;
 
-// Mux channel assignments for the 6 sample buttons.
-// Uncomment the mapping that matches your hardware build.
-// See TODO.md for a planned button-wizard that auto-detects these.
-//  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 7, 2, 3, 6, 5, 4 };
-//  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2, 4, 5, 6, 7 };
-    constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 2, 3, 4, 1, 0, 5 };
-//  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 5, 6, 1, 4, 3, 2 };
+//  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 7, 2,3, 6, 5, 4};
+// constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2,4, 5, 6, 7};
+//  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 2, 3,4, 1, 0, 5};
+//constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 5,6,1, 4, 3, 2};
+// constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 7, 6,5, 4, 0, 1};
+   
 
-constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND    = 6;
-constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 7;
+
+//  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 2, 3,4, 7, 6,5};
+
+// constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND = 1;
+// constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 0;
+
+
+
+
+ constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 1, 0,4, 5, 6,7};
+
+constexpr uint8_t SWITCH_CHANNEL_DELAY_SEND = 2;
+constexpr uint8_t SWITCH_CHANNEL_FILTER_ENABLE = 3;

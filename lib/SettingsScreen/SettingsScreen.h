@@ -30,6 +30,8 @@ public:
 	
 	virtual void setFilterQCallback(std::function<void(float)> cb) = 0;
 	virtual void setDebugModeCallback(std::function<void(bool)> cb) = 0;
+	virtual void setPotInvertedCallback(std::function<void(bool)> cb) = 0;
+	virtual void setBtEnabledCallback(std::function<void(bool)> cb) = 0;
 
 	// Get current feedback filter cutoff values (UI -> persistence)
 	virtual float getFeedbackLowpassCutoff() const = 0;
@@ -37,17 +39,21 @@ public:
 
 	virtual float getZoom() const = 0;
 	virtual bool getOneShot() const = 0;
-	
+
 	virtual float getDelayTimeMs() const = 0;
 	virtual float getDelayFeedback() const = 0;
 	virtual float getFilterQ() const = 0;
 	virtual bool getDebugMode() const = 0;
-	
+	virtual bool getPotInverted() const = 0;
+	virtual bool getBtEnabled() const = 0;
+
 	virtual void setZoom(float zoom) = 0;
 	virtual void setOneShot(bool oneShot) = 0;
 	virtual void setDelayTimeMs(float ms) = 0;
 	virtual void setFilterQ(float q) = 0;
 	virtual void setDebugMode(bool debug) = 0;
+	virtual void setPotInverted(bool inverted) = 0;
+	virtual void setBtEnabled(bool enabled) = 0;
 
 	virtual void setDelayFeedback(float feedback) = 0;
 	virtual void setFeedbackLowpassCutoff(float hz) = 0;

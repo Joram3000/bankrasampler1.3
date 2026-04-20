@@ -37,6 +37,9 @@ public:
     void setDelayFeedbackCallback(std::function<void(float)> cb) override { delayFeedbackCallback = cb; }
     void setFeedbackLowpassCutoffCallback(std::function<void(float)> cb) override { feedbackLowpassCutoffCallback = cb; }
     void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) override { feedbackHighpassCutoffCallback = cb; }
+    void setDebugModeCallback(std::function<void(bool)> cb) override { (void)cb; }
+    void setPotInvertedCallback(std::function<void(bool)> cb) override { (void)cb; }
+    void setBtEnabledCallback(std::function<void(bool)> cb) override { (void)cb; }
 
     void begin() override {}
 
@@ -91,6 +94,12 @@ public:
     
     void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
     void setOneShot(bool oneShot) override {}
+    void setDebugMode(bool debug) override { (void)debug; }
+    bool getDebugMode() const override { return false; }
+    void setPotInverted(bool inv) override { (void)inv; }
+    bool getPotInverted() const override { return false; }
+    void setBtEnabled(bool en) override { (void)en; }
+    bool getBtEnabled() const override { return DEFAULT_BT_ENABLED; }
     void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
     void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
     void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
