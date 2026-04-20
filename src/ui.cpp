@@ -38,7 +38,7 @@ static constexpr float    splash_horizontalSpread = 3.5f;
 static DISPLAY_U8G2_CLASS display(DISPLAY_U8G2_CTOR_ARGS);
 static ScopeDisplayU8g2 scopeDisplay(&display, waveformBuffer, &waveformIndex, NUM_WAVEFORM_SAMPLES);
 
-ScopeI2SStream scopeI2s(waveformBuffer, &waveformIndex, scopeDisplay.getMutex());
+ScopeI2SStream scopeI2s(waveformBuffer, &waveformIndex, scopeDisplay.getScopeMutex());
 
 // --- HUD draw callback -------------------------------------------------------
 // Called from the display task (Core 0) after the waveform is drawn but
