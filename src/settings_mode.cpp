@@ -3,18 +3,23 @@
 #include "config/settings.h"
 #include "storage/settings_storage.h"
 #include "storage/pin_config_storage.h"
+#include "storage/sample_map.h"
 #include "ui.h"
 #include "SettingsScreen.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <Arduino.h>
+#ifdef BLUETOOTH_MODE
+#include "esp_gap_bt_api.h"
+#endif
 
 namespace {
 ISettingsScreen* settingsScreen = nullptr;
 OperatingMode currentMode = OperatingMode::Performance;
 #ifdef BLUETOOTH_MODE
 bool btEnabledAtBoot = DEFAULT_BT_ENABLED;
+static unsigned long btClearRebootAt = 0; // non-zero = reboot scheduled
 #endif
 
 // Persisted settings state (used to seed UI on boot)
@@ -54,6 +59,9 @@ void applyOperatingModeChange(OperatingMode newMode) {
       if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
       if (currentMode == OperatingMode::Settings) {
         saveSettingsToSd(settingsScreen);
+        for (int i = 0; i < (int)BUTTON_COUNT; ++i)
+          setSampleIndexForButton(i, settingsScreen->getSampleIndex(i));
+        saveSampleMap();
 #ifdef BLUETOOTH_MODE
         if (settingsScreen && settingsScreen->getBtEnabled() != btEnabledAtBoot) {
           Serial.println("[BT] bt_enabled changed — rebooting...");
@@ -135,8 +143,24 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
     extern bool btEnabled;
     btEnabled = on;
   });
+  settingsScreen->setBtClearBondsCallback([]() {
+    int count = esp_bt_gap_get_bond_device_num();
+    if (count > 0) {
+      constexpr int kMaxBonds = 8;
+      esp_bd_addr_t list[kMaxBonds];
+      if (count > kMaxBonds) count = kMaxBonds;
+      esp_bt_gap_get_bond_device_list(&count, list);
+      for (int i = 0; i < count; i++)
+        esp_bt_gap_remove_bond_device(list[i]);
+      Serial.printf("[BT] Cleared %d bond(s) — rebooting...\n", count);
+    } else {
+      Serial.println("[BT] No bonds — rebooting anyway...");
+    }
+    btClearRebootAt = millis() + 1500;
+  });
 #else
   settingsScreen->setBtEnabledCallback(nullptr);
+  settingsScreen->setBtClearBondsCallback(nullptr);
 #endif
 
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
@@ -158,6 +182,14 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
 
   loadSettingsFromSd(settingsScreen);
 
+  settingsScreen->setSampleList(getAvailableSampleCount(), getAvailableSampleNames());
+  for (int i = 0; i < (int)BUTTON_COUNT; ++i)
+    settingsScreen->setSampleIndex(i, getSampleIndexForButton(i));
+  settingsScreen->setSamplePreviewCallback([](int btnIdx) {
+    setSampleIndexForButton(btnIdx, settingsScreen->getSampleIndex(btnIdx));
+    if (settingsDeps.playSamplePreview) settingsDeps.playSamplePreview(btnIdx);
+  });
+
 #ifdef BLUETOOTH_MODE
   // Record the bt_enabled state as it was when the device booted,
   // so we can detect a change and trigger a reboot on settings exit.
@@ -178,6 +210,12 @@ void initSettingsModeSwitch() {
 }
 
 void checkSettingsMode(uint32_t now) {
+#ifdef BLUETOOTH_MODE
+  if (btClearRebootAt > 0 && now >= btClearRebootAt) {
+    btClearRebootAt = 0;
+    ESP.restart();
+  }
+#endif
   if ((now - settingsModeLastPoll) < SETTINGS_POLL_INTERVAL_MS) return;
   settingsModeLastPoll = now;
 
@@ -215,6 +253,23 @@ void updateSettingsScreenUi() {
 bool handleSettingsButtonInput(size_t buttonIndex, bool active) {
   if (currentMode != OperatingMode::Settings || !active) return false;
   if (!settingsScreen) return true;
+
+#ifdef BLUETOOTH_MODE
+  if (buttonIndex == 2) {
+    constexpr int kMax = 8;
+    esp_bd_addr_t list[kMax];
+    int n = esp_bt_gap_get_bond_device_num();
+    if (n > 0) {
+      if (n > kMax) n = kMax;
+      esp_bt_gap_get_bond_device_list(&n, list);
+      for (int i = 0; i < n; i++)
+        esp_bt_gap_remove_bond_device(list[i]);
+    }
+    esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+    Serial.printf("[BT] Bonds cleared (%d), now discoverable\n", n);
+    return true;
+  }
+#endif
 
   ISettingsScreen::Button mapped;
   switch (buttonIndex) {

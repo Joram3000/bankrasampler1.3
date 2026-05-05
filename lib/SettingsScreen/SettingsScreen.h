@@ -32,6 +32,7 @@ public:
 	virtual void setDebugModeCallback(std::function<void(bool)> cb) = 0;
 	virtual void setPotInvertedCallback(std::function<void(bool)> cb) = 0;
 	virtual void setBtEnabledCallback(std::function<void(bool)> cb) = 0;
+	virtual void setBtClearBondsCallback(std::function<void()> cb) = 0;
 
 	// Get current feedback filter cutoff values (UI -> persistence)
 	virtual float getFeedbackLowpassCutoff() const = 0;
@@ -62,4 +63,15 @@ public:
 	// Override the maximum adjustable delay time at runtime (e.g. after
 	// dynamic heap measurement). Clamped values in the UI will update accordingly.
 	virtual void setDelayTimeMax(float maxMs) = 0;
+
+	// Supply the full list of .wav filenames from the SD card (called once at boot).
+	// `names` must point to stable storage valid for the lifetime of the screen.
+	virtual void setSampleList(int count, const char* const* names) = 0;
+
+	// Per-button sample selection (buttonIndex: 0..BUTTON_COUNT-1).
+	virtual int  getSampleIndex(int buttonIndex) const = 0;
+	virtual void setSampleIndex(int buttonIndex, int index) = 0;
+
+	// Fired when the user scrolls to a new sample for a button (arg = buttonIndex).
+	virtual void setSamplePreviewCallback(std::function<void(int)> cb) = 0;
 };

@@ -24,14 +24,6 @@ extern bool    runtimeMuxActiveLow;
 // Keep compile-time constant for code that needs it before setup() runs.
 constexpr bool MUX_ACTIVE_LOW_DEFAULT = true;
 
-constexpr const char* SAMPLE_PATHS[] = {
-    "/1.wav",
-    "/2.wav",
-    "/3.wav",
-    "/4.wav",
-    "/5.wav",
-    "/6.wav"
-};
 
 constexpr uint32_t BUTTON_FADE_MS = 30;
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 4;

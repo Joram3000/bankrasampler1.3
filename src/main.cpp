@@ -11,6 +11,7 @@
 #include "ui.h"
 #include "storage/settings_storage.h"
 #include "storage/pin_config_storage.h"
+#include "storage/sample_map.h"
 #include "settings_mode.h"
 #include "input/mux.h"
 #include "config/config.h"
@@ -179,7 +180,7 @@ static void audioTask(void *) {
                 vTaskDelay(pdMS_TO_TICKS(2));
             }
 #endif
-            player.setPath(SAMPLE_PATHS[playIdx]);
+            player.setPath(getSamplePathForButton(playIdx));
             player.setActive(true);
             currentSample = playIdx;
         } else if (pendingStop && !fadingOut) {
@@ -360,7 +361,7 @@ static void onMuxChange(uint8_t channel, bool active) {
 void playSample(int index) {
     pendingPlayIndex = index;
     pendingStop      = false;
-    if (DEBUGMODE) Serial.printf("[PLAY] %s\n", SAMPLE_PATHS[index]);
+    if (DEBUGMODE) Serial.printf("[PLAY] %s\n", getSamplePathForButton(index));
 }
 
 void stopSample(int index) {
@@ -572,6 +573,9 @@ static void btConnectionStateChanged(esp_a2d_connection_state_t state, void *) {
         pendingBtDisconnect = true;
         pendingBtConnect    = false;
         setHudBtConnected(false);
+        // Re-enable discoverability so the phone can reconnect without forgetting the device.
+        // The BT stack may have left the device non-connectable after the session ended.
+        esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
         Serial.printf("[BT] *** DISCONNECTED ***  heap=%d\n", ESP.getFreeHeap());
 
     } else if (state == ESP_A2D_CONNECTION_STATE_CONNECTING) {
@@ -626,6 +630,7 @@ void setup() {
    AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
   delay(800);      // rust voor voeding na Serial.begin / power-on
   initSd();
+  initSampleMap();
   delay(300);
   initDisplay();
   delay(200);
@@ -669,8 +674,9 @@ void setup() {
     SettingsUiDependencies settingsDeps;
     settingsDeps.delayEffect    = &delayEffect1;
     settingsDeps.filterEffect   = &insertFilterL;
-    settingsDeps.releaseButtons = releaseAllButtons;
-    settingsDeps.maxDelayMs     = dynMaxMs;
+    settingsDeps.releaseButtons    = releaseAllButtons;
+    settingsDeps.playSamplePreview = [](int idx) { playSample(idx); };
+    settingsDeps.maxDelayMs        = dynMaxMs;
     initSettingsUi(settingsDeps);
 
     hideSplash();

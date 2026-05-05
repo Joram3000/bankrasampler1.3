@@ -25,6 +25,13 @@ public:
 		ITEM_DEBUG,
 		ITEM_POT_INVERTED,
 		ITEM_BT_ENABLED,
+		ITEM_BT_CLEAR_BONDS,
+		ITEM_SAMPLE_0,
+		ITEM_SAMPLE_1,
+		ITEM_SAMPLE_2,
+		ITEM_SAMPLE_3,
+		ITEM_SAMPLE_4,
+		ITEM_SAMPLE_5,
 		ITEM_COUNT
 	};
 
@@ -41,6 +48,25 @@ public:
 	void setDebugModeCallback(std::function<void(bool)> cb) override { debugModeCallback = cb; }
 	void setPotInvertedCallback(std::function<void(bool)> cb) override { potInvertedCallback = cb; }
 	void setBtEnabledCallback(std::function<void(bool)> cb) override { btEnabledCallback = cb; }
+	void setBtClearBondsCallback(std::function<void()> cb) override { btClearBondsCallback = cb; }
+
+	void setSampleList(int count, const char* const* names) override {
+		sampleCount = count;
+		sampleNames = names;
+		markDirty();
+	}
+	int getSampleIndex(int buttonIndex) const override {
+		if (buttonIndex < 0 || buttonIndex >= kBtnCount) return 0;
+		return sampleIndices[buttonIndex];
+	}
+	void setSampleIndex(int buttonIndex, int index) override {
+		if (buttonIndex < 0 || buttonIndex >= kBtnCount) return;
+		sampleIndices[buttonIndex] = index;
+		markDirty();
+	}
+	void setSamplePreviewCallback(std::function<void(int)> cb) override {
+		samplePreviewCallback = cb;
+	}
 
 	void begin() override {}
 
@@ -65,7 +91,6 @@ public:
         if (!active) return false;
         switch(b) {
             case Button::Ok:
-				Serial.println("SettingsScreen: OK button pressed, ");
                  return true;
             case Button::Tap:
                 bpmTap.tap();
@@ -146,6 +171,7 @@ private:
 	bool debugMode = true;
 	bool potInverted = false;
 	bool btEnabled = DEFAULT_BT_ENABLED;
+	unsigned long btClearDoneUntil = 0;
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(bool)> oneShotCallback;
@@ -157,6 +183,13 @@ private:
 	std::function<void(bool)> debugModeCallback;
 	std::function<void(bool)> potInvertedCallback;
 	std::function<void(bool)> btEnabledCallback;
+	std::function<void()> btClearBondsCallback;
+	std::function<void(int)> samplePreviewCallback;
+
+	static constexpr int kBtnCount = 6;
+	int sampleCount = 0;
+	const char* const* sampleNames = nullptr;
+	int sampleIndices[kBtnCount] = {0, 1, 2, 3, 4, 5};
 
 	void markDirty() { dirty = true; }
 	void notifyZoomChanged() { if (zoomCallback) zoomCallback(zoom); }
@@ -198,6 +231,25 @@ private:
 			case ITEM_BT_ENABLED:
 				if (delta != 0) setBtEnabled(!btEnabled);
 				break;
+			case ITEM_BT_CLEAR_BONDS:
+				if (delta != 0 && btClearBondsCallback) {
+					btClearBondsCallback();
+					btClearDoneUntil = millis() + 1500;
+					markDirty();
+				}
+				break;
+			case ITEM_SAMPLE_0: case ITEM_SAMPLE_1: case ITEM_SAMPLE_2:
+			case ITEM_SAMPLE_3: case ITEM_SAMPLE_4: case ITEM_SAMPLE_5: {
+				if (delta == 0 || sampleCount == 0) break;
+				int bi = selection - ITEM_SAMPLE_0;
+				int newIdx = sampleIndices[bi] + delta;
+				if (newIdx < 0)            newIdx = sampleCount - 1;
+				if (newIdx >= sampleCount) newIdx = 0;
+				sampleIndices[bi] = newIdx;
+				markDirty();
+				if (samplePreviewCallback) samplePreviewCallback(bi);
+				break;
+			}
          }
      }
  
@@ -223,7 +275,14 @@ private:
 			"Filter Q",
 			"Debug",
 			"Pot inv",
-			"BT (reboot)"
+			"BT (reboot)",
+			"BT: Clear pair",
+			"Btn 1",
+			"Btn 2",
+			"Btn 3",
+			"Btn 4",
+			"Btn 5",
+			"Btn 6",
 		};
 		const int rowHeight = 10;
 		const int highlightHeight = rowHeight + 2;
@@ -266,6 +325,24 @@ private:
 				case ITEM_DEBUG: snprintf(valbuf, sizeof(valbuf), "%s", debugMode ? "On" : "Off"); break;
 				case ITEM_POT_INVERTED: snprintf(valbuf, sizeof(valbuf), "%s", potInverted ? "On" : "Off"); break;
 				case ITEM_BT_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", btEnabled ? "On" : "Off"); break;
+				case ITEM_BT_CLEAR_BONDS: snprintf(valbuf, sizeof(valbuf), "%s", (millis() < btClearDoneUntil) ? "Rebooting" : "< >"); break;
+				case ITEM_SAMPLE_0: case ITEM_SAMPLE_1: case ITEM_SAMPLE_2:
+				case ITEM_SAMPLE_3: case ITEM_SAMPLE_4: case ITEM_SAMPLE_5: {
+					int bi = idx - ITEM_SAMPLE_0;
+					int si = sampleIndices[bi];
+					if (sampleNames && si >= 0 && si < sampleCount) {
+						char noExt[16];
+						strncpy(noExt, sampleNames[si], sizeof(noExt) - 1);
+						noExt[sizeof(noExt) - 1] = '\0';
+						int nl = (int)strlen(noExt);
+						if (nl > 4 && strcasecmp(noExt + nl - 4, ".wav") == 0)
+							noExt[nl - 4] = '\0';
+						snprintf(valbuf, sizeof(valbuf), "%s", noExt);
+					} else {
+						snprintf(valbuf, sizeof(valbuf), "-");
+					}
+					break;
+				}
 			}
 			int vx = u8g2.getDisplayWidth() - (int)strlen(valbuf) * 6 - 4;
 			u8g2.drawStr(vx, baseline, valbuf);

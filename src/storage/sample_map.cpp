@@ -18,11 +18,11 @@ int  buttonSampleIdx[BUTTON_COUNT];
 // Per-button path buffer — stable pointer valid for player.setPath().
 char pathBufs[BUTTON_COUNT][SAMPLE_NAME_MAX + 2];
 
-bool isSupportedExtension(const char* name) {
+bool isValidSample(const char* name) {
+    if (name[0] == '.') return false;  // skip macOS resource forks (._filename.wav) and hidden files
     int len = (int)strlen(name);
     if (len < 5) return false;
-    const char* ext = name + len - 4;
-    return strcasecmp(ext, ".wav") == 0;
+    return strcasecmp(name + len - 4, ".wav") == 0;
 }
 
 void scanSdForSamples() {
@@ -35,7 +35,7 @@ void scanSdForSamples() {
         if (!entry) break;
         bool isDir = entry.isDirectory();
         const char* name = entry.name();
-        if (!isDir && isSupportedExtension(name)) {
+        if (!isDir && isValidSample(name)) {
             strncpy(sampleNames[sampleCount], name, SAMPLE_NAME_MAX - 1);
             sampleNames[sampleCount][SAMPLE_NAME_MAX - 1] = '\0';
             namePtrs[sampleCount] = sampleNames[sampleCount];

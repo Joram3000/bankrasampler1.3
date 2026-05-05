@@ -14,6 +14,7 @@ struct SettingsUiDependencies {
   PreallocDelay* delayEffect = nullptr;
   void* filterEffect = nullptr;
   std::function<void()> releaseButtons;
+  std::function<void(int)> playSamplePreview;
   uint16_t maxDelayMs = 0; // 0 = use compile-time default; set after dynamic allocation
 };
 
