@@ -22,6 +22,16 @@ public:
 		ITEM_FB_HIGHPASS,
 		ITEM_FB_LOWPASS,
 		ITEM_FILTER_Q,
+		ITEM_DEBUG,
+		ITEM_POT_INVERTED,
+		ITEM_BT_ENABLED,
+		ITEM_BT_CLEAR_BONDS,
+		ITEM_SAMPLE_0,
+		ITEM_SAMPLE_1,
+		ITEM_SAMPLE_2,
+		ITEM_SAMPLE_3,
+		ITEM_SAMPLE_4,
+		ITEM_SAMPLE_5,
 		ITEM_COUNT
 	};
 
@@ -35,6 +45,28 @@ public:
 	void setFeedbackLowpassCutoffCallback(std::function<void(float)> cb) override { feedbackLowpassCutoffCallback = cb; }
 	void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) override { feedbackHighpassCutoffCallback = cb; }
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
+	void setDebugModeCallback(std::function<void(bool)> cb) override { debugModeCallback = cb; }
+	void setPotInvertedCallback(std::function<void(bool)> cb) override { potInvertedCallback = cb; }
+	void setBtEnabledCallback(std::function<void(bool)> cb) override { btEnabledCallback = cb; }
+	void setBtClearBondsCallback(std::function<void()> cb) override { btClearBondsCallback = cb; }
+
+	void setSampleList(int count, const char* const* names) override {
+		sampleCount = count;
+		sampleNames = names;
+		markDirty();
+	}
+	int getSampleIndex(int buttonIndex) const override {
+		if (buttonIndex < 0 || buttonIndex >= kBtnCount) return 0;
+		return sampleIndices[buttonIndex];
+	}
+	void setSampleIndex(int buttonIndex, int index) override {
+		if (buttonIndex < 0 || buttonIndex >= kBtnCount) return;
+		sampleIndices[buttonIndex] = index;
+		markDirty();
+	}
+	void setSamplePreviewCallback(std::function<void(int)> cb) override {
+		samplePreviewCallback = cb;
+	}
 
 	void begin() override {}
 
@@ -59,7 +91,6 @@ public:
         if (!active) return false;
         switch(b) {
             case Button::Ok:
-				Serial.println("SettingsScreen: OK button pressed, ");
                  return true;
             case Button::Tap:
                 bpmTap.tap();
@@ -100,14 +131,25 @@ public:
 	float getFeedbackLowpassCutoff() const override { return feedbackLowpassCutoff; }
 	float getFeedbackHighpassCutoff() const override { return feedbackHighpassCutoff; }
 	float getFilterQ() const override { return filterQ; }
+	bool getDebugMode() const override { return debugMode; }
+	bool getPotInverted() const override { return potInverted; }
+	bool getBtEnabled() const override { return btEnabled; }
 	
 	void setZoom(float z) override { zoom = clampValue(z, 0.1f, 12.0f); markDirty(); notifyZoomChanged(); }
 	void setOneShot(bool oneShot) override { this->oneShot = oneShot; markDirty(); if (oneShotCallback) oneShotCallback(oneShot); }
-	void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS); markDirty(); notifyDelayTimeChanged(); }
+	void setDelayTimeMs(float ms) override { delayTimeMs = clampValue(ms, DELAY_TIME_MIN_MS, delayTimeMaxMs); markDirty(); notifyDelayTimeChanged(); }
+	void setDelayTimeMax(float maxMs) override {
+		delayTimeMaxMs = std::max(DELAY_TIME_MIN_MS, maxMs);
+		delayTimeMs    = clampValue(delayTimeMs, DELAY_TIME_MIN_MS, delayTimeMaxMs);
+		markDirty();
+	}
 	void setDelayFeedback(float fb) override { delayFeedback = clampValue(fb, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX); markDirty(); notifyDelayFeedbackChanged(); }
 	void setFeedbackLowpassCutoff(float hz) override { feedbackLowpassCutoff = clampValue(hz, FB_LOW_PASS_MIN_HZ, FB_LOW_PASS_MAX_HZ); markDirty(); if (feedbackLowpassCutoffCallback) feedbackLowpassCutoffCallback(feedbackLowpassCutoff); }
 	void setFeedbackHighpassCutoff(float hz) override { feedbackHighpassCutoff = clampValue(hz, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ); markDirty(); if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
+	void setDebugMode(bool debug) override { debugMode = debug; markDirty(); if (debugModeCallback) debugModeCallback(debug); }
+	void setPotInverted(bool inv) override { potInverted = inv; markDirty(); if (potInvertedCallback) potInvertedCallback(inv); }
+	void setBtEnabled(bool en) override { btEnabled = en; markDirty(); if (btEnabledCallback) btEnabledCallback(en); }
 private:
     U8G2 &u8g2;
     bool active = false;
@@ -119,12 +161,17 @@ private:
     unsigned long lastDrawMs = 0;
     uint8_t selection = 0;
 
-	float delayTimeMs = DEFAULT_DELAY_TIME_MS;
+	float delayTimeMs    = DEFAULT_DELAY_TIME_MS;
+	float delayTimeMaxMs = DELAY_TIME_MAX_MS;
 	bool oneShot = false;
 	float delayFeedback = DEFAULT_DELAY_FEEDBACK;
 	float feedbackLowpassCutoff = FB_LOW_PASS_CUTOFF_HZ;
 	float feedbackHighpassCutoff = FB_HIGH_PASS_CUTOFF_HZ;
 	float filterQ = LOW_PASS_Q;
+	bool debugMode = true;
+	bool potInverted = false;
+	bool btEnabled = DEFAULT_BT_ENABLED;
+	unsigned long btClearDoneUntil = 0;
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(bool)> oneShotCallback;
@@ -133,6 +180,16 @@ private:
 	std::function<void(float)> feedbackLowpassCutoffCallback;
 	std::function<void(float)> feedbackHighpassCutoffCallback;
 	std::function<void(float)> filterQCallback;
+	std::function<void(bool)> debugModeCallback;
+	std::function<void(bool)> potInvertedCallback;
+	std::function<void(bool)> btEnabledCallback;
+	std::function<void()> btClearBondsCallback;
+	std::function<void(int)> samplePreviewCallback;
+
+	static constexpr int kBtnCount = 6;
+	int sampleCount = 0;
+	const char* const* sampleNames = nullptr;
+	int sampleIndices[kBtnCount] = {0, 1, 2, 3, 4, 5};
 
 	void markDirty() { dirty = true; }
 	void notifyZoomChanged() { if (zoomCallback) zoomCallback(zoom); }
@@ -151,7 +208,7 @@ private:
                  }
                  break;
             case ITEM_DELAY_TIME:
-				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, DELAY_TIME_MAX_MS, DELAY_TIME_STEP_MS, [this]{ notifyDelayTimeChanged(); });
+				applyAdjustment(delayTimeMs, delta, DELAY_TIME_MIN_MS, delayTimeMaxMs, DELAY_TIME_STEP_MS, [this]{ notifyDelayTimeChanged(); });
                 break;
             case ITEM_DELAY_FEEDBACK:
 				applyAdjustment(delayFeedback, delta, DELAY_FEEDBACK_MIN, DELAY_FEEDBACK_MAX, DELAY_FEEDBACK_STEP, [this]{ notifyDelayFeedbackChanged(); });
@@ -165,6 +222,34 @@ private:
 			case ITEM_FILTER_Q:
 				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, [this]{ notifyFilterQChanged(); });
 				break;
+			case ITEM_DEBUG:
+				if (delta != 0) setDebugMode(!debugMode);
+				break;
+			case ITEM_POT_INVERTED:
+				if (delta != 0) setPotInverted(!potInverted);
+				break;
+			case ITEM_BT_ENABLED:
+				if (delta != 0) setBtEnabled(!btEnabled);
+				break;
+			case ITEM_BT_CLEAR_BONDS:
+				if (delta != 0 && btClearBondsCallback) {
+					btClearBondsCallback();
+					btClearDoneUntil = millis() + 1500;
+					markDirty();
+				}
+				break;
+			case ITEM_SAMPLE_0: case ITEM_SAMPLE_1: case ITEM_SAMPLE_2:
+			case ITEM_SAMPLE_3: case ITEM_SAMPLE_4: case ITEM_SAMPLE_5: {
+				if (delta == 0 || sampleCount == 0) break;
+				int bi = selection - ITEM_SAMPLE_0;
+				int newIdx = sampleIndices[bi] + delta;
+				if (newIdx < 0)            newIdx = sampleCount - 1;
+				if (newIdx >= sampleCount) newIdx = 0;
+				sampleIndices[bi] = newIdx;
+				markDirty();
+				if (samplePreviewCallback) samplePreviewCallback(bi);
+				break;
+			}
          }
      }
  
@@ -187,7 +272,17 @@ private:
 			"Delay fb",
 			"FB HP",
 			"FB LP",
-			"Filter Q"
+			"Filter Q",
+			"Debug",
+			"Pot inv",
+			"BT (reboot)",
+			"BT: Clear pair",
+			"Btn 1",
+			"Btn 2",
+			"Btn 3",
+			"Btn 4",
+			"Btn 5",
+			"Btn 6",
 		};
 		const int rowHeight = 10;
 		const int highlightHeight = rowHeight + 2;
@@ -227,6 +322,27 @@ private:
 				case ITEM_FB_HIGHPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackHighpassCutoff); break;
 				case ITEM_FB_LOWPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackLowpassCutoff); break;
 				case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
+				case ITEM_DEBUG: snprintf(valbuf, sizeof(valbuf), "%s", debugMode ? "On" : "Off"); break;
+				case ITEM_POT_INVERTED: snprintf(valbuf, sizeof(valbuf), "%s", potInverted ? "On" : "Off"); break;
+				case ITEM_BT_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", btEnabled ? "On" : "Off"); break;
+				case ITEM_BT_CLEAR_BONDS: snprintf(valbuf, sizeof(valbuf), "%s", (millis() < btClearDoneUntil) ? "Rebooting" : "< >"); break;
+				case ITEM_SAMPLE_0: case ITEM_SAMPLE_1: case ITEM_SAMPLE_2:
+				case ITEM_SAMPLE_3: case ITEM_SAMPLE_4: case ITEM_SAMPLE_5: {
+					int bi = idx - ITEM_SAMPLE_0;
+					int si = sampleIndices[bi];
+					if (sampleNames && si >= 0 && si < sampleCount) {
+						char noExt[16];
+						strncpy(noExt, sampleNames[si], sizeof(noExt) - 1);
+						noExt[sizeof(noExt) - 1] = '\0';
+						int nl = (int)strlen(noExt);
+						if (nl > 4 && strcasecmp(noExt + nl - 4, ".wav") == 0)
+							noExt[nl - 4] = '\0';
+						snprintf(valbuf, sizeof(valbuf), "%s", noExt);
+					} else {
+						snprintf(valbuf, sizeof(valbuf), "-");
+					}
+					break;
+				}
 			}
 			int vx = u8g2.getDisplayWidth() - (int)strlen(valbuf) * 6 - 4;
 			u8g2.drawStr(vx, baseline, valbuf);

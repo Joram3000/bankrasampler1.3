@@ -72,7 +72,7 @@ int Sn74hc151Mux::readChannel(uint8_t channel) {
 
 bool readMuxActiveState(uint8_t channel) {
   int level = gInputMux.readChannel(channel);
-  return MUX_ACTIVE_LOW ? (level == LOW) : (level == HIGH);
+  return runtimeMuxActiveLow ? (level == LOW) : (level == HIGH);
 }
 
 static void initMuxState() {

@@ -4,6 +4,7 @@
 
 int findButtonIndexForChannel(uint8_t channel);
 void releaseAllButtons();
+void setButtonChannel(int index, uint8_t channel);
 
 
 class Button {
@@ -12,8 +13,9 @@ public:
   void begin();
   void release();
 
+  int pin; // public so applyPinConfig() and the wizard can set it
+
 private:
-  int pin;
   bool latched = false;
   uint32_t lastTriggerTime = 0;
 };

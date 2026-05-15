@@ -5,23 +5,24 @@
 #include <U8g2lib.h>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include "config.h"
-#include "storage/logo.h" 
+#include "storage/logo.h"
 
 class ScopeDisplayU8g2 {
   private:
   U8G2* display;
   TaskHandle_t displayTaskHandle;
   SemaphoreHandle_t displayMutex;
+  SemaphoreHandle_t scopeMutex;   // guards waveform buffer only, separate from display I2C lock
   volatile bool suspended = false;
-  
+  std::function<void(U8G2*)> _hudCallback;
+
   int16_t* waveformBuffer;
   int* waveformIndex;
   int waveformSamples;
   
-  const bool useSmoothing = false; // naar settings?
-  const float smoothingAlpha = 0.2f;// kan weg?
   
   float horizZoom = DEFAULT_HORIZ_ZOOM;
     float vertScale = DEFAULT_VERT_SCALE;
@@ -40,28 +41,37 @@ class ScopeDisplayU8g2 {
 
     void displayLoop() {
       for (;;) {
-        // When suspended, sleep a bit so we don't spin and starve other tasks.
         if (suspended) {
           vTaskDelay(40 / portTICK_PERIOD_MS);
           continue;
         }
 
+        // Snapshot the waveform buffer under the lightweight scopeMutex so
+        // the display render (slow I2C) never blocks audio capture.
+        int16_t snapBuf[NUM_WAVEFORM_SAMPLES];
+        int     snapIndex = 0;
+        if (scopeMutex != NULL && xSemaphoreTake(scopeMutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+          memcpy(snapBuf, waveformBuffer, waveformSamples * sizeof(int16_t));
+          snapIndex = *waveformIndex;
+          xSemaphoreGive(scopeMutex);
+        }
+
         if (displayMutex != NULL && xSemaphoreTake(displayMutex, portMAX_DELAY) == pdTRUE) {
           display->clearBuffer();
-          renderWaveform();
-    
+          renderWaveform(snapBuf, snapIndex);
+          if (_hudCallback) _hudCallback(display);
           display->sendBuffer();
           xSemaphoreGive(displayMutex);
         }
 
-        // throttle update rate
-        vTaskDelay(40 / portTICK_PERIOD_MS);
+        // ~50 fps — keep low enough that BT stack (prio 5) is never starved
+        vTaskDelay(20 / portTICK_PERIOD_MS);
       }
     }
 
-    void renderWaveform() {
+    void renderWaveform(const int16_t* buf, int snapIndex) {
       const int scopeCenter = kScreenHeight / 2;
-      if (waveformSamples <= 0 || !waveformBuffer) return;
+      if (waveformSamples <= 0 || !buf) return;
 
       int displayedSamples = std::max(1, static_cast<int>(waveformSamples / horizZoom));
       displayedSamples = std::min(displayedSamples, waveformSamples);
@@ -70,7 +80,7 @@ class ScopeDisplayU8g2 {
                     ? static_cast<float>(displayedSamples - 1) / static_cast<float>(kScreenWidth - 1)
                     : 0.0f;
 
-      int newestIndex = ((*waveformIndex - 1) + waveformSamples) % waveformSamples;
+      int newestIndex = (snapIndex - 1 + waveformSamples) % waveformSamples;
       int startIndex = newestIndex - displayedSamples + 1;
       if (startIndex < 0) startIndex += waveformSamples;
 
@@ -93,27 +103,15 @@ class ScopeDisplayU8g2 {
       for (int i = 0; i < kNumOverlays; ++i) prevYs[i] = NAN;
 
       // Helper to draw one overlay given multiplier and prevY reference
+      // (Simplified — no exponential smoothing)
       auto drawOverlay = [&](int x, float yValue, float &prevY) {
-        if (useSmoothing) {
-          if (!isfinite(prevY)) prevY = yValue;
-          float smoothY = (smoothingAlpha * yValue) + ((1.0f - smoothingAlpha) * prevY);
-          int yPrev = constrain(static_cast<int>(round(prevY)), 0, kScreenHeight - 1);
-          int yCur  = constrain(static_cast<int>(round(smoothY)), 0, kScreenHeight - 1);
-          if (x == 0) {
-            display->drawPixel(x, yCur);
-          } else {
-            display->drawLine(x - 1, yPrev, x, yCur);
-          }
-          prevY = smoothY;
+        int y = constrain(static_cast<int>(round(yValue)), 0, kScreenHeight - 1);
+        if (!isfinite(prevY)) {
+          display->drawPixel(x, y);
         } else {
-          int y = constrain(static_cast<int>(round(yValue)), 0, kScreenHeight - 1);
-          if (!isfinite(prevY)) {
-            display->drawPixel(x, y);
-          } else {
-            display->drawLine(x - 1, static_cast<int>(round(prevY)), x, y);
-          }
-          prevY = static_cast<float>(y);
+          display->drawLine(x - 1, static_cast<int>(round(prevY)), x, y);
         }
+        prevY = static_cast<float>(y);
       };
 
       for (int x = 0; x < kScreenWidth; ++x) {
@@ -125,12 +123,12 @@ class ScopeDisplayU8g2 {
         int winSum = 0, winCount = 0;
         for (int w = -halfWin; w <= halfWin; ++w) {
           int i = (centerIdx + w) % waveformSamples; if (i < 0) i += waveformSamples;
-          winSum += waveformBuffer[i];
+          winSum += buf[i];
           ++winCount;
         }
         int nextIdx = (centerIdx + 1) % waveformSamples;
         float sampleCenter = static_cast<float>(winSum) / static_cast<float>(winCount);
-        float sampleNext = static_cast<float>(waveformBuffer[nextIdx]);
+        float sampleNext = static_cast<float>(buf[nextIdx]);
         float val = sampleCenter * (1.0f - frac) + sampleNext * frac;
 
         // base amplitude once
@@ -148,6 +146,10 @@ class ScopeDisplayU8g2 {
     }
   
   public:
+    // HUD callback — called each frame after the waveform is drawn but before
+    // sendBuffer(), so HUD elements appear in the same frame as the waveform.
+    void setHudCallback(std::function<void(U8G2*)> cb) { _hudCallback = std::move(cb); }
+
     // Allow external control of horizontal zoom and vertical scale so UI
     // settings can affect the scope rendering.
     void setHorizZoom(float hz) { horizZoom = hz; }
@@ -183,6 +185,7 @@ class ScopeDisplayU8g2 {
         currentFile(""),
         isPlaying(false) {
       displayMutex = xSemaphoreCreateMutex();
+      scopeMutex   = xSemaphoreCreateMutex();
     }
 
     bool begin(uint8_t i2cAddress = DISPLAY_I2C_ADDRESS) {
@@ -203,7 +206,7 @@ class ScopeDisplayU8g2 {
         "ScopeDisplayU8G2",
         4096,   
         this,
-        1,
+        2,      // prio 2: above inputTask (1), below BT stack (5)
         &displayTaskHandle,
         0
       );
@@ -212,9 +215,8 @@ class ScopeDisplayU8g2 {
 
 
 
-    SemaphoreHandle_t* getMutex() {
-      return &displayMutex;
-    }
+    SemaphoreHandle_t* getMutex()      { return &displayMutex; }
+    SemaphoreHandle_t* getScopeMutex() { return &scopeMutex; }
 };
 
 #endif

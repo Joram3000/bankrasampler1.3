@@ -2,20 +2,37 @@
 #include "config/config.h"
 #include "config/settings.h"
 #include "storage/settings_storage.h"
+#include "storage/pin_config_storage.h"
+#include "storage/sample_map.h"
 #include "ui.h"
 #include "SettingsScreen.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <Arduino.h>
+#ifdef BLUETOOTH_MODE
+#include "esp_gap_bt_api.h"
+#endif
 
 namespace {
 ISettingsScreen* settingsScreen = nullptr;
 OperatingMode currentMode = OperatingMode::Performance;
+#ifdef BLUETOOTH_MODE
+bool btEnabledAtBoot = DEFAULT_BT_ENABLED;
+static unsigned long btClearRebootAt = 0; // non-zero = reboot scheduled
+#endif
 
 // Persisted settings state (used to seed UI on boot)
 float currentFilterQ = LOW_PASS_Q;
+#ifdef BLUETOOTH_MODE
+float currentDelayTimeMs = BT_DEFAULT_DELAY_TIME_MS;
+#else
 float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
+#endif
 float currentDelayFeedback = DEFAULT_DELAY_FEEDBACK;
+
+// Runtime delay maximum, set once after dynamic allocation.
+static uint16_t runtimeMaxDelayMs = 0; // 0 = not yet set
 
 // Settings mode switch state
 bool settingsModeRawState = false;
@@ -42,6 +59,16 @@ void applyOperatingModeChange(OperatingMode newMode) {
       if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
       if (currentMode == OperatingMode::Settings) {
         saveSettingsToSd(settingsScreen);
+        for (int i = 0; i < (int)BUTTON_COUNT; ++i)
+          setSampleIndexForButton(i, settingsScreen->getSampleIndex(i));
+        saveSampleMap();
+#ifdef BLUETOOTH_MODE
+        if (settingsScreen && settingsScreen->getBtEnabled() != btEnabledAtBoot) {
+          Serial.println("[BT] bt_enabled changed — rebooting...");
+          delay(200);
+          ESP.restart();
+        }
+#endif
       }
     }
   
@@ -55,22 +82,31 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   if (settingsScreen) return;
   settingsDeps = deps;
 
+  // Apply runtime max before creating the screen so the first draw is correct.
+  if (deps.maxDelayMs > 0) runtimeMaxDelayMs = deps.maxDelayMs;
+
   settingsScreen = createSettingsScreen();
   if (!settingsScreen) {
     Serial.println("Settings screen unavailable");
     return;
   }
 
+  // Inform the screen of the runtime delay range immediately.
+  if (runtimeMaxDelayMs > 0) settingsScreen->setDelayTimeMax(static_cast<float>(runtimeMaxDelayMs));
+
   settingsScreen->setZoomCallback([](float zoomFactor) { setScopeHorizZoom(zoomFactor); });
   settingsScreen->setDelayTimeCallback([](float durationMs) {
+    const float maxMs = runtimeMaxDelayMs > 0
+                      ? static_cast<float>(runtimeMaxDelayMs)
+                      : DELAY_TIME_MAX_MS;
     float clamped = durationMs;
     if (clamped < DELAY_TIME_MIN_MS) clamped = DELAY_TIME_MIN_MS;
-    if (clamped > DELAY_TIME_MAX_MS) clamped = DELAY_TIME_MAX_MS;
+    if (clamped > maxMs)             clamped = maxMs;
     currentDelayTimeMs = clamped;
     if (settingsDeps.delayEffect) {
       settingsDeps.delayEffect->setDuration(static_cast<uint16_t>(clamped));
     }
-   });
+  });
   settingsScreen->setDelayFeedbackCallback([](float feedback) {
     currentDelayFeedback = feedback;
     if (settingsDeps.delayEffect) {
@@ -97,6 +133,36 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   });
 
 
+  settingsScreen->setDebugModeCallback([](bool on) {
+    extern bool debugEnabled;
+    debugEnabled = on;
+  });
+
+#ifdef BLUETOOTH_MODE
+  settingsScreen->setBtEnabledCallback([](bool on) {
+    extern bool btEnabled;
+    btEnabled = on;
+  });
+  settingsScreen->setBtClearBondsCallback([]() {
+    int count = esp_bt_gap_get_bond_device_num();
+    if (count > 0) {
+      constexpr int kMaxBonds = 8;
+      esp_bd_addr_t list[kMaxBonds];
+      if (count > kMaxBonds) count = kMaxBonds;
+      esp_bt_gap_get_bond_device_list(&count, list);
+      for (int i = 0; i < count; i++)
+        esp_bt_gap_remove_bond_device(list[i]);
+      Serial.printf("[BT] Cleared %d bond(s) — rebooting...\n", count);
+    } else {
+      Serial.println("[BT] No bonds — rebooting anyway...");
+    }
+    btClearRebootAt = millis() + 1500;
+  });
+#else
+  settingsScreen->setBtEnabledCallback(nullptr);
+  settingsScreen->setBtClearBondsCallback(nullptr);
+#endif
+
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);
   settingsScreen->setDelayFeedback(currentDelayFeedback);
@@ -104,8 +170,31 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   // seed feedback filter cutoffs from defaults so the UI shows sensible values
   settingsScreen->setFeedbackLowpassCutoff(FB_LOW_PASS_CUTOFF_HZ);
   settingsScreen->setFeedbackHighpassCutoff(FB_HIGH_PASS_CUTOFF_HZ);
+  settingsScreen->setDebugMode(true); // default on
+
+  // Seed pot polarity without triggering the save callback.
+  settingsScreen->setPotInvertedCallback(nullptr);
+  settingsScreen->setPotInverted(runtimePotInverted);
+  settingsScreen->setPotInvertedCallback([](bool inv) {
+    runtimePotInverted = inv;
+    savePinConfigToSd();
+  });
 
   loadSettingsFromSd(settingsScreen);
+
+  settingsScreen->setSampleList(getAvailableSampleCount(), getAvailableSampleNames());
+  for (int i = 0; i < (int)BUTTON_COUNT; ++i)
+    settingsScreen->setSampleIndex(i, getSampleIndexForButton(i));
+  settingsScreen->setSamplePreviewCallback([](int btnIdx) {
+    setSampleIndexForButton(btnIdx, settingsScreen->getSampleIndex(btnIdx));
+    if (settingsDeps.playSamplePreview) settingsDeps.playSamplePreview(btnIdx);
+  });
+
+#ifdef BLUETOOTH_MODE
+  // Record the bt_enabled state as it was when the device booted,
+  // so we can detect a change and trigger a reboot on settings exit.
+  btEnabledAtBoot = settingsScreen->getBtEnabled();
+#endif
 }
 
 void initSettingsModeSwitch() {
@@ -121,6 +210,12 @@ void initSettingsModeSwitch() {
 }
 
 void checkSettingsMode(uint32_t now) {
+#ifdef BLUETOOTH_MODE
+  if (btClearRebootAt > 0 && now >= btClearRebootAt) {
+    btClearRebootAt = 0;
+    ESP.restart();
+  }
+#endif
   if ((now - settingsModeLastPoll) < SETTINGS_POLL_INTERVAL_MS) return;
   settingsModeLastPoll = now;
 
@@ -159,6 +254,23 @@ bool handleSettingsButtonInput(size_t buttonIndex, bool active) {
   if (currentMode != OperatingMode::Settings || !active) return false;
   if (!settingsScreen) return true;
 
+#ifdef BLUETOOTH_MODE
+  if (buttonIndex == 2) {
+    constexpr int kMax = 8;
+    esp_bd_addr_t list[kMax];
+    int n = esp_bt_gap_get_bond_device_num();
+    if (n > 0) {
+      if (n > kMax) n = kMax;
+      esp_bt_gap_get_bond_device_list(&n, list);
+      for (int i = 0; i < n; i++)
+        esp_bt_gap_remove_bond_device(list[i]);
+    }
+    esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+    Serial.printf("[BT] Bonds cleared (%d), now discoverable\n", n);
+    return true;
+  }
+#endif
+
   ISettingsScreen::Button mapped;
   switch (buttonIndex) {
     case 0: mapped = ISettingsScreen::Button::Tap; break;
@@ -184,4 +296,9 @@ void setOperatingMode(OperatingMode mode) {
 
 ISettingsScreen* getSettingsScreen() {
   return settingsScreen;
+}
+
+void setRuntimeMaxDelayMs(uint16_t ms) {
+  runtimeMaxDelayMs = ms;
+  if (settingsScreen) settingsScreen->setDelayTimeMax(static_cast<float>(ms));
 }

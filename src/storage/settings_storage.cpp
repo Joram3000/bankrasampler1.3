@@ -5,12 +5,6 @@
 
 #include "SettingsScreen.h"
 
-
-// it would be nice to add downsample
-// and make filters switchable
-// downsample too
-// en debugmode
-
 namespace {
 constexpr const char* kSettingsPath = "/settings.txt";
 }
@@ -60,7 +54,15 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
             float fq = line.substring(9).toFloat();
             settingsScreen->setFilterQ(fq);
             Serial.printf("Loaded filter_q=%.2f from settings\n", fq);
-        } 
+        } else if (line.startsWith("debug=")) {
+            bool dm = line.substring(6).toInt() != 0;
+            settingsScreen->setDebugMode(dm);
+            Serial.printf("Loaded debug=%d from settings\n", dm);
+        } else if (line.startsWith("bt_enabled=")) {
+            bool bt = line.substring(11).toInt() != 0;
+            settingsScreen->setBtEnabled(bt);
+            Serial.printf("Loaded bt_enabled=%d from settings\n", bt);
+        }
 
     }
     f.close();
@@ -104,6 +106,12 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
  
     Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
     f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
+
+    Serial.printf(" debug=%d\n", settingsScreen->getDebugMode() ? 1 : 0);
+    f.printf("debug=%d\n", settingsScreen->getDebugMode() ? 1 : 0);
+
+    Serial.printf(" bt_enabled=%d\n", settingsScreen->getBtEnabled() ? 1 : 0);
+    f.printf("bt_enabled=%d\n", settingsScreen->getBtEnabled() ? 1 : 0);
 
     Serial.println("Settings saved.");
 

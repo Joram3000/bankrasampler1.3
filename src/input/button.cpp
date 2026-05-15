@@ -5,32 +5,35 @@
 Button::Button(int pinOrChannel) : pin(pinOrChannel) {}
 
 // --- Buttons ---
+// Initialized with channel 0 as placeholder; setButtonChannel() must be called
+// before use (done in applyPinConfig() after loading from SD / wizard).
 Button buttons[BUTTON_COUNT] = {
-  Button(BUTTON_CHANNEL_ON_MUX[0]),
-  Button(BUTTON_CHANNEL_ON_MUX[1]),
-  Button(BUTTON_CHANNEL_ON_MUX[2]),
-  Button(BUTTON_CHANNEL_ON_MUX[3]),
-  Button(BUTTON_CHANNEL_ON_MUX[4]),
-  Button(BUTTON_CHANNEL_ON_MUX[5]),
+  Button(0), Button(0), Button(0),
+  Button(0), Button(0), Button(0),
 };
 
+void setButtonChannel(int index, uint8_t channel) {
+  if (index >= 0 && index < (int)BUTTON_COUNT) {
+    buttons[index].pin = channel;
+  }
+}
+
 int findButtonIndexForChannel(uint8_t channel) {
-  for (int i = 0; i < BUTTON_COUNT; ++i) {
-    if (BUTTON_CHANNEL_ON_MUX[i] == channel) {
+  for (int i = 0; i < (int)BUTTON_COUNT; ++i) {
+    if (buttons[i].pin == (int)channel) {
       return i;
     }
   }
   return -1;
 }
 
-void Button::release() { 
-  latched = false; 
-  lastTriggerTime = 0; 
+void Button::release() {
+  latched = false;
+  lastTriggerTime = 0;
 }
 
 void releaseAllButtons() {
-  for (int i = 0; i < BUTTON_COUNT; ++i) {
+  for (int i = 0; i < (int)BUTTON_COUNT; ++i) {
     buttons[i].release();
   }
 }
-

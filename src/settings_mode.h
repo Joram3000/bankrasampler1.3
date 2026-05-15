@@ -12,8 +12,10 @@ enum class OperatingMode { Performance, Settings };
 
 struct SettingsUiDependencies {
   PreallocDelay* delayEffect = nullptr;
-  void* filterEffect = nullptr; // TODO: make editable as: LowPassFilter, HighPassFilter, or BandPassFilter<float>*
+  void* filterEffect = nullptr;
   std::function<void()> releaseButtons;
+  std::function<void(int)> playSamplePreview;
+  uint16_t maxDelayMs = 0; // 0 = use compile-time default; set after dynamic allocation
 };
 
 // Create and configure the settings screen (UI-only setup).
@@ -30,6 +32,10 @@ void updateSettingsScreenUi();
 // Handle a button input when in settings mode.
 // Returns true if the input was consumed by the settings UI.
 bool handleSettingsButtonInput(size_t buttonIndex, bool active);
+
+// Update the maximum delay time shown/enforced in the settings UI.
+// Call after dynamic delay allocation so the screen range matches reality.
+void setRuntimeMaxDelayMs(uint16_t ms);
 
 // Operating mode accessors for the main loop.
 OperatingMode getOperatingMode();

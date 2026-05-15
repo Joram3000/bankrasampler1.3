@@ -29,6 +29,10 @@ public:
 	virtual void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) = 0;
 	
 	virtual void setFilterQCallback(std::function<void(float)> cb) = 0;
+	virtual void setDebugModeCallback(std::function<void(bool)> cb) = 0;
+	virtual void setPotInvertedCallback(std::function<void(bool)> cb) = 0;
+	virtual void setBtEnabledCallback(std::function<void(bool)> cb) = 0;
+	virtual void setBtClearBondsCallback(std::function<void()> cb) = 0;
 
 	// Get current feedback filter cutoff values (UI -> persistence)
 	virtual float getFeedbackLowpassCutoff() const = 0;
@@ -36,17 +40,38 @@ public:
 
 	virtual float getZoom() const = 0;
 	virtual bool getOneShot() const = 0;
-	
+
 	virtual float getDelayTimeMs() const = 0;
 	virtual float getDelayFeedback() const = 0;
 	virtual float getFilterQ() const = 0;
-	
+	virtual bool getDebugMode() const = 0;
+	virtual bool getPotInverted() const = 0;
+	virtual bool getBtEnabled() const = 0;
+
 	virtual void setZoom(float zoom) = 0;
 	virtual void setOneShot(bool oneShot) = 0;
 	virtual void setDelayTimeMs(float ms) = 0;
 	virtual void setFilterQ(float q) = 0;
+	virtual void setDebugMode(bool debug) = 0;
+	virtual void setPotInverted(bool inverted) = 0;
+	virtual void setBtEnabled(bool enabled) = 0;
 
 	virtual void setDelayFeedback(float feedback) = 0;
 	virtual void setFeedbackLowpassCutoff(float hz) = 0;
 	virtual void setFeedbackHighpassCutoff(float hz) = 0;
+
+	// Override the maximum adjustable delay time at runtime (e.g. after
+	// dynamic heap measurement). Clamped values in the UI will update accordingly.
+	virtual void setDelayTimeMax(float maxMs) = 0;
+
+	// Supply the full list of .wav filenames from the SD card (called once at boot).
+	// `names` must point to stable storage valid for the lifetime of the screen.
+	virtual void setSampleList(int count, const char* const* names) = 0;
+
+	// Per-button sample selection (buttonIndex: 0..BUTTON_COUNT-1).
+	virtual int  getSampleIndex(int buttonIndex) const = 0;
+	virtual void setSampleIndex(int buttonIndex, int index) = 0;
+
+	// Fired when the user scrolls to a new sample for a button (arg = buttonIndex).
+	virtual void setSamplePreviewCallback(std::function<void(int)> cb) = 0;
 };

@@ -26,6 +26,43 @@ class PreallocDelay : public audio_tools::AudioEffect {
     return !buffer_.empty();
   }
 
+  // Geef de delay buffer vrij om heap te sparen (bijv. tijdens BT init/connect)
+  // Roep reallocate() aan om de delay weer te activeren
+  void freeBuffer() {
+    setActive(false);
+    buffer_.clear();
+    buffer_.shrink_to_fit();
+    writeIndex_ = 0;
+    delaySamples_ = 0;
+    resetFilterState();
+  }
+
+  // Herinitialiseer de buffer na freeBuffer()
+  void reallocate() {
+    allocateBuffer();
+    updateDelaySamples();
+    updateFeedbackFilterCoeff();
+    resetFilterState();
+    setActive(true);
+  }
+
+  // Herinitialiseer met een nieuw maximum (groter of kleiner dan bij boot).
+  // Gebruik dit bijv. na BT disconnect om meer heap te benutten.
+  void reallocate(uint16_t newMaxMs) {
+    maxDelayMs_ = newMaxMs;
+    // Clamp huidige duration zodat die niet boven het nieuwe maximum uitkomt.
+    if (durationMs_ > maxDelayMs_) durationMs_ = maxDelayMs_;
+    allocateBuffer();
+    updateDelaySamples();
+    updateFeedbackFilterCoeff();
+    resetFilterState();
+    setActive(true);
+  }
+
+  uint16_t getMaxDelayMs() const { return maxDelayMs_; }
+
+  bool isAllocated() const { return !buffer_.empty(); }
+
   PreallocDelay* clone() override { return new PreallocDelay(*this); }
 
   void setActive(bool value) override { active_flag = value; }
