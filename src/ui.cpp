@@ -16,12 +16,16 @@
 // --- HUD state ---------------------------------------------------------------
 // Written from any task (loop, BT callback), read from display task (Core 0).
 // Volatile + 32-bit aligned types are atomic on Xtensa without a mutex.
-static volatile bool  hudDelayEnabled = false;
-static volatile float hudPotValue     = 0.0f;
-static volatile bool  hudIsFilter     = false;
-static volatile bool  hudBtConnected  = false;
+static volatile bool  hudDelayEnabled   = false;
+static volatile bool  hudDelayAvailable = true;
+static volatile float hudPotValue       = 0.0f;
+static volatile bool  hudIsFilter       = false;
+static volatile bool  hudBtConnected    = false;
+static volatile int   hudBtFilter       = -1;
 
 void setHudDelayEnabled(bool on)                { hudDelayEnabled = on; }
+void setHudDelayAvailable(bool available)       { hudDelayAvailable = available; }
+void setHudBtFilter(int state)                  { hudBtFilter = state; }
 void setHudPotValue(float v, bool isFilter)     { hudPotValue = v; hudIsFilter = isFilter; }
 void setHudBtConnected(bool connected)          { hudBtConnected = connected; }
 
@@ -47,13 +51,18 @@ static void drawHud(U8G2 *d) {
     // Bottom status bar — compact 4x6 font
     d->setFont(u8g2_font_5x7_tr);
 
-    // Bottom-left: delay on/off
-    const char *delTxt = hudDelayEnabled ? "del on" : "del off";
-    uint16_t delW = d->getStrWidth(delTxt);
-    d->setDrawColor(0);
-    d->drawBox(0, DISPLAY_HEIGHT - 7, (int)(delW + 2), 7);
-    d->setDrawColor(1);
-    d->drawStr(1, DISPLAY_HEIGHT - 2, delTxt);
+    // Bottom-left: delay on/off, or in BT mode (no delay) the BT filter state
+    // while BT is connected; nothing otherwise.
+    const char *delTxt = nullptr;
+    if (hudDelayAvailable)     delTxt = hudDelayEnabled ? "del on" : "del off";
+    else if (hudBtFilter >= 0) delTxt = hudBtFilter ? "btflt on" : "btflt off";
+    if (delTxt) {
+        uint16_t delW = d->getStrWidth(delTxt);
+        d->setDrawColor(0);
+        d->drawBox(0, DISPLAY_HEIGHT - 7, (int)(delW + 2), 7);
+        d->setDrawColor(1);
+        d->drawStr(1, DISPLAY_HEIGHT - 2, delTxt);
+    }
 
     // Bottom-right: vol/flt percentage
     char potTxt[12];

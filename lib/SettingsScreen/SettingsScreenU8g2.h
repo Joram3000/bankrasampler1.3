@@ -22,6 +22,7 @@ public:
 		ITEM_FB_HIGHPASS,
 		ITEM_FB_LOWPASS,
 		ITEM_FILTER_Q,
+		ITEM_BT_FILTER_Q,
 		ITEM_DEBUG,
 		ITEM_POT_INVERTED,
 		ITEM_BT_ENABLED,
@@ -103,13 +104,17 @@ public:
                 }
                  return true;
             case Button::Up:
-				// Up: move selection up
-				if (selection == 0) selection = ITEM_COUNT - 1; else --selection;
+				// Up: move selection up, skipping hidden items
+				do {
+					selection = (selection == 0) ? ITEM_COUNT - 1 : selection - 1;
+				} while (!itemVisible(selection));
 				markDirty();
                  return true;
             case Button::Down:
-				// Down: move selection down
-				selection = (selection + 1) % ITEM_COUNT;
+				// Down: move selection down, skipping hidden items
+				do {
+					selection = (selection + 1) % ITEM_COUNT;
+				} while (!itemVisible(selection));
 				markDirty();
                  return true;
             case Button::Left:
@@ -131,6 +136,7 @@ public:
 	float getFeedbackLowpassCutoff() const override { return feedbackLowpassCutoff; }
 	float getFeedbackHighpassCutoff() const override { return feedbackHighpassCutoff; }
 	float getFilterQ() const override { return filterQ; }
+	float getBtFilterQ() const override { return btFilterQ; }
 	bool getDebugMode() const override { return debugMode; }
 	bool getPotInverted() const override { return potInverted; }
 	bool getBtEnabled() const override { return btEnabled; }
@@ -147,9 +153,13 @@ public:
 	void setFeedbackLowpassCutoff(float hz) override { feedbackLowpassCutoff = clampValue(hz, FB_LOW_PASS_MIN_HZ, FB_LOW_PASS_MAX_HZ); markDirty(); if (feedbackLowpassCutoffCallback) feedbackLowpassCutoffCallback(feedbackLowpassCutoff); }
 	void setFeedbackHighpassCutoff(float hz) override { feedbackHighpassCutoff = clampValue(hz, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ); markDirty(); if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
+	void setBtFilterQ(float q) override { btFilterQ = clampValue(q, BT_FILTER_Q_MIN, BT_FILTER_Q_MAX); markDirty(); }
 	void setDebugMode(bool debug) override { debugMode = debug; markDirty(); if (debugModeCallback) debugModeCallback(debug); }
 	void setPotInverted(bool inv) override { potInverted = inv; markDirty(); if (potInvertedCallback) potInvertedCallback(inv); }
 	void setBtEnabled(bool en) override { btEnabled = en; markDirty(); if (btEnabledCallback) btEnabledCallback(en); }
+
+	void setDelayAvailable(bool available) override { delayAvailable = available; markDirty(); }
+	void setBtMenu(BtMenu mode) override { btMenu = mode; markDirty(); }
 private:
     U8G2 &u8g2;
     bool active = false;
@@ -168,10 +178,27 @@ private:
 	float feedbackLowpassCutoff = FB_LOW_PASS_CUTOFF_HZ;
 	float feedbackHighpassCutoff = FB_HIGH_PASS_CUTOFF_HZ;
 	float filterQ = LOW_PASS_Q;
-	bool debugMode = true;
+	float btFilterQ = BT_FILTER_Q;
+	bool debugMode = false;
 	bool potInverted = false;
 	bool btEnabled = DEFAULT_BT_ENABLED;
 	unsigned long btClearDoneUntil = 0;
+	bool   delayAvailable = true;
+	BtMenu btMenu         = BtMenu::Unsupported;
+
+	bool itemVisible(uint8_t item) const {
+		switch (item) {
+			case ITEM_DELAY_TIME: case ITEM_DELAY_FEEDBACK:
+			case ITEM_FB_HIGHPASS: case ITEM_FB_LOWPASS:
+				return delayAvailable;
+			case ITEM_BT_ENABLED:
+				return btMenu != BtMenu::Unsupported;
+			case ITEM_BT_FILTER_Q: case ITEM_BT_CLEAR_BONDS:
+				return btMenu == BtMenu::On;
+			default:
+				return true;
+		}
+	}
 
 	std::function<void(float)> zoomCallback;
 	std::function<void(bool)> oneShotCallback;
@@ -221,6 +248,9 @@ private:
 				break;
 			case ITEM_FILTER_Q:
 				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, [this]{ notifyFilterQChanged(); });
+				break;
+			case ITEM_BT_FILTER_Q:
+				applyAdjustment(btFilterQ, delta, BT_FILTER_Q_MIN, BT_FILTER_Q_MAX, BT_FILTER_Q_STEP, nullptr);
 				break;
 			case ITEM_DEBUG:
 				if (delta != 0) setDebugMode(!debugMode);
@@ -273,6 +303,7 @@ private:
 			"FB HP",
 			"FB LP",
 			"Filter Q",
+			"BT Flt Q",
 			"Debug",
 			"Pot inv",
 			"BT (reboot)",
@@ -288,18 +319,29 @@ private:
 		const int highlightHeight = rowHeight + 2;
 		const int menuTop = 12;
 		const uint8_t maxVisible = static_cast<uint8_t>(u8g2.getDisplayHeight() / rowHeight);
-		uint8_t visible = (ITEM_COUNT < maxVisible) ? ITEM_COUNT : maxVisible;
+
+		// Only items that do something in the current mode are listed.
+		uint8_t shown[ITEM_COUNT];
+		uint8_t shownCount = 0;
+		uint8_t selectedPos = 0;
+		for (uint8_t i = 0; i < ITEM_COUNT; ++i) {
+			if (!itemVisible(i)) continue;
+			if (i == selection) selectedPos = shownCount;
+			shown[shownCount++] = i;
+		}
+
+		uint8_t visible = (shownCount < maxVisible) ? shownCount : maxVisible;
 		uint8_t firstIndex = 0;
-		if (ITEM_COUNT > visible) {
-			if (selection >= visible) {
-				firstIndex = selection - visible + 1;
+		if (shownCount > visible) {
+			if (selectedPos >= visible) {
+				firstIndex = selectedPos - visible + 1;
 			}
-			uint8_t maxFirst = ITEM_COUNT - visible;
+			uint8_t maxFirst = shownCount - visible;
 			if (firstIndex > maxFirst) firstIndex = maxFirst;
 		}
 		for (uint8_t row = 0; row < visible; ++row) {
-			uint8_t idx = firstIndex + row;
-			if (idx >= ITEM_COUNT) break;
+			if (firstIndex + row >= shownCount) break;
+			uint8_t idx = shown[firstIndex + row];
 			int baseline = menuTop + row * rowHeight;
 			if (idx == selection) {
 				u8g2.drawBox(0, baseline - rowHeight, u8g2.getDisplayWidth(), highlightHeight);
@@ -322,6 +364,7 @@ private:
 				case ITEM_FB_HIGHPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackHighpassCutoff); break;
 				case ITEM_FB_LOWPASS: snprintf(valbuf, sizeof(valbuf), "%.0fHz", feedbackLowpassCutoff); break;
 				case ITEM_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", filterQ); break;
+				case ITEM_BT_FILTER_Q: snprintf(valbuf, sizeof(valbuf), "%.2f", btFilterQ); break;
 				case ITEM_DEBUG: snprintf(valbuf, sizeof(valbuf), "%s", debugMode ? "On" : "Off"); break;
 				case ITEM_POT_INVERTED: snprintf(valbuf, sizeof(valbuf), "%s", potInverted ? "On" : "Off"); break;
 				case ITEM_BT_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", btEnabled ? "On" : "Off"); break;

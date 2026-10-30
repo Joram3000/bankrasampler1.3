@@ -30,9 +30,19 @@ constexpr uint32_t BUTTON_DEBOUNCE_MS = 4;
 constexpr uint32_t BUTTON_RETRIGGER_GUARD_MS = 10;
 constexpr uint8_t INPUT_MUX_SETTLE_TIME_US = 4;
 
-// Silence frames pumped per audioTask tick when player is inactive.
-// Must be enough to keep the I2S buffer (512 frames) filled within the task period (6 ms).
-// 6 ms @ 44100 Hz = ~265 frames. Use 128 as a conservative value — task runs fast enough.
+// I2S DMA depth: trigger latency vs. SD-card stall headroom.
+// audioTask keeps the DMA full (silence when idle), so everything queued in it
+// plays before a newly triggered sample: this IS the button-to-sound latency.
+// It is also how long an SD read may stall during playback before a dropout.
+//   8 × 512 frames ≈ 93 ms   6 × 256 ≈ 35 ms   4 × 256 ≈ 23 ms   (@ 44.1 kHz)
+// With 6 × 256, BT buffer creep during rapid sample triggering suggested SD
+// stalls (file open on each sample start) outlasting the DMA; 8 × 256 (≈46 ms)
+// gives that ~11 ms more room.
+constexpr int I2S_DMA_BUFFER_COUNT  = 8;
+constexpr int I2S_DMA_BUFFER_FRAMES = 256;
+
+// Silence frames pumped per audioTask tick (~1 ms) when the player is inactive.
+// 128 frames ≈ 2.9 ms per tick — faster than real time, so the DMA stays full.
 static const size_t kScopeSilenceFramesPerLoop = 128;
   
 // Runtime pot polarity — true = inverted (raw = 4095 - analogRead).

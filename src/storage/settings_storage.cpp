@@ -54,6 +54,10 @@ void loadSettingsFromSd(ISettingsScreen* settingsScreen) {
             float fq = line.substring(9).toFloat();
             settingsScreen->setFilterQ(fq);
             Serial.printf("Loaded filter_q=%.2f from settings\n", fq);
+        } else if (line.startsWith("bt_filter_q=")) {
+            float bq = line.substring(12).toFloat();
+            settingsScreen->setBtFilterQ(bq);
+            Serial.printf("Loaded bt_filter_q=%.2f from settings\n", bq);
         } else if (line.startsWith("debug=")) {
             bool dm = line.substring(6).toInt() != 0;
             settingsScreen->setDebugMode(dm);
@@ -106,6 +110,9 @@ void saveSettingsToSd(const ISettingsScreen* settingsScreen) {
  
     Serial.printf(" filter_q=%.2f\n", settingsScreen->getFilterQ());
     f.printf("filter_q=%.2f\n", settingsScreen->getFilterQ());
+
+    Serial.printf(" bt_filter_q=%.2f\n", settingsScreen->getBtFilterQ());
+    f.printf("bt_filter_q=%.2f\n", settingsScreen->getBtFilterQ());
 
     Serial.printf(" debug=%d\n", settingsScreen->getDebugMode() ? 1 : 0);
     f.printf("debug=%d\n", settingsScreen->getDebugMode() ? 1 : 0);

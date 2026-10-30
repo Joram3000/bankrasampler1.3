@@ -24,11 +24,7 @@ static unsigned long btClearRebootAt = 0; // non-zero = reboot scheduled
 
 // Persisted settings state (used to seed UI on boot)
 float currentFilterQ = LOW_PASS_Q;
-#ifdef BLUETOOTH_MODE
-float currentDelayTimeMs = BT_DEFAULT_DELAY_TIME_MS;
-#else
 float currentDelayTimeMs = DEFAULT_DELAY_TIME_MS;
-#endif
 float currentDelayFeedback = DEFAULT_DELAY_FEEDBACK;
 
 // Runtime delay maximum, set once after dynamic allocation.
@@ -93,6 +89,16 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
 
   // Inform the screen of the runtime delay range immediately.
   if (runtimeMaxDelayMs > 0) settingsScreen->setDelayTimeMax(static_cast<float>(runtimeMaxDelayMs));
+
+  // Only show menu items that do something in this mode.
+  settingsScreen->setDelayAvailable(deps.maxDelayMs > 0);
+#ifdef BLUETOOTH_MODE
+  extern bool btEnabled; // loaded from settings.txt before this runs
+  settingsScreen->setBtMenu(btEnabled ? ISettingsScreen::BtMenu::On
+                                      : ISettingsScreen::BtMenu::Off);
+#else
+  settingsScreen->setBtMenu(ISettingsScreen::BtMenu::Unsupported);
+#endif
 
   settingsScreen->setZoomCallback([](float zoomFactor) { setScopeHorizZoom(zoomFactor); });
   settingsScreen->setDelayTimeCallback([](float durationMs) {
@@ -170,7 +176,7 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   // seed feedback filter cutoffs from defaults so the UI shows sensible values
   settingsScreen->setFeedbackLowpassCutoff(FB_LOW_PASS_CUTOFF_HZ);
   settingsScreen->setFeedbackHighpassCutoff(FB_HIGH_PASS_CUTOFF_HZ);
-  settingsScreen->setDebugMode(true); // default on
+  settingsScreen->setDebugMode(false); // default off; settings.txt can turn it on
 
   // Seed pot polarity without triggering the save callback.
   settingsScreen->setPotInvertedCallback(nullptr);
@@ -254,23 +260,6 @@ bool handleSettingsButtonInput(size_t buttonIndex, bool active) {
   if (currentMode != OperatingMode::Settings || !active) return false;
   if (!settingsScreen) return true;
 
-#ifdef BLUETOOTH_MODE
-  if (buttonIndex == 2) {
-    constexpr int kMax = 8;
-    esp_bd_addr_t list[kMax];
-    int n = esp_bt_gap_get_bond_device_num();
-    if (n > 0) {
-      if (n > kMax) n = kMax;
-      esp_bt_gap_get_bond_device_list(&n, list);
-      for (int i = 0; i < n; i++)
-        esp_bt_gap_remove_bond_device(list[i]);
-    }
-    esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-    Serial.printf("[BT] Bonds cleared (%d), now discoverable\n", n);
-    return true;
-  }
-#endif
-
   ISettingsScreen::Button mapped;
   switch (buttonIndex) {
     case 0: mapped = ISettingsScreen::Button::Tap; break;
@@ -296,9 +285,4 @@ void setOperatingMode(OperatingMode mode) {
 
 ISettingsScreen* getSettingsScreen() {
   return settingsScreen;
-}
-
-void setRuntimeMaxDelayMs(uint16_t ms) {
-  runtimeMaxDelayMs = ms;
-  if (settingsScreen) settingsScreen->setDelayTimeMax(static_cast<float>(ms));
 }

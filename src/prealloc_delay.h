@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <limits>
+#include <new>
 #include <vector>
 #include "AudioTools/CoreAudio/AudioEffects/AudioEffect.h"
 #include "config/settings.h"
@@ -24,39 +25,6 @@ class PreallocDelay : public audio_tools::AudioEffect {
     setDuration(initialDelayMs);
     setActive(true);
     return !buffer_.empty();
-  }
-
-  // Geef de delay buffer vrij om heap te sparen (bijv. tijdens BT init/connect)
-  // Roep reallocate() aan om de delay weer te activeren
-  void freeBuffer() {
-    setActive(false);
-    buffer_.clear();
-    buffer_.shrink_to_fit();
-    writeIndex_ = 0;
-    delaySamples_ = 0;
-    resetFilterState();
-  }
-
-  // Herinitialiseer de buffer na freeBuffer()
-  void reallocate() {
-    allocateBuffer();
-    updateDelaySamples();
-    updateFeedbackFilterCoeff();
-    resetFilterState();
-    setActive(true);
-  }
-
-  // Herinitialiseer met een nieuw maximum (groter of kleiner dan bij boot).
-  // Gebruik dit bijv. na BT disconnect om meer heap te benutten.
-  void reallocate(uint16_t newMaxMs) {
-    maxDelayMs_ = newMaxMs;
-    // Clamp huidige duration zodat die niet boven het nieuwe maximum uitkomt.
-    if (durationMs_ > maxDelayMs_) durationMs_ = maxDelayMs_;
-    allocateBuffer();
-    updateDelaySamples();
-    updateFeedbackFilterCoeff();
-    resetFilterState();
-    setActive(true);
   }
 
   uint16_t getMaxDelayMs() const { return maxDelayMs_; }
@@ -189,9 +157,20 @@ class PreallocDelay : public audio_tools::AudioEffect {
   }
 
   void allocateBuffer() {
-    size_t neededSamples = msToSamples(maxDelayMs_);
+    // maxDelayMs_ == 0 means "no delay": keep the buffer empty.
+    size_t neededSamples = (maxDelayMs_ == 0) ? 0 : msToSamples(maxDelayMs_);
     if (buffer_.size() != neededSamples) {
-      buffer_.assign(neededSamples, 0);
+      // Release the old block first so the new one does not need both at once.
+      buffer_.clear();
+      buffer_.shrink_to_fit();
+      try {
+        buffer_.assign(neededSamples, 0);
+      } catch (const std::bad_alloc&) {
+        // No contiguous block this large: leave the delay unallocated
+        // (process() and the mixer bypass it) instead of aborting.
+        buffer_.clear();
+        buffer_.shrink_to_fit();
+      }
       writeIndex_ = 0;
       resetFilterState();
     }

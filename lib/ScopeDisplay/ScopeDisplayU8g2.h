@@ -39,12 +39,31 @@ class ScopeDisplayU8g2 {
       self->displayLoop();
     }
 
+    // FNV-1a over the frame buffer — cheap way to spot an unchanged frame.
+    uint32_t hashFrameBuffer() const {
+      const uint8_t* p = display->getBufferPtr();
+      const size_t n = static_cast<size_t>(display->getBufferTileWidth())
+                     * display->getBufferTileHeight() * 8;
+      uint32_t h = 2166136261u;
+      for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 16777619u;
+      return h;
+    }
+
     void displayLoop() {
+      uint32_t framesSinceReport = 0;
+      uint32_t framesSent        = 0;
+      uint32_t lastReportMs      = millis();
+      // Hash of what is on the panel now; reset whenever something else
+      // (splash, settings screen) may have drawn, so the next frame is sent.
+      uint32_t lastSentHash = 0;
+      bool     panelKnown   = false;
       for (;;) {
         if (suspended) {
+          panelKnown = false;
           vTaskDelay(40 / portTICK_PERIOD_MS);
           continue;
         }
+        const uint32_t frameStartMs = millis();
 
         // Snapshot the waveform buffer under the lightweight scopeMutex so
         // the display render (slow I2C) never blocks audio capture.
@@ -60,12 +79,39 @@ class ScopeDisplayU8g2 {
           display->clearBuffer();
           renderWaveform(snapBuf, snapIndex);
           if (_hudCallback) _hudCallback(display);
-          display->sendBuffer();
+          // Skip the I2C transfer when nothing changed (e.g. silence): bus
+          // activity couples into the DAC output as audible noise, and it is
+          // most audible exactly when the screen is static.
+          const uint32_t hash = hashFrameBuffer();
+          if (!panelKnown || hash != lastSentHash) {
+            display->sendBuffer();
+            lastSentHash = hash;
+            panelKnown   = true;
+            ++framesSent;
+          }
           xSemaphoreGive(displayMutex);
         }
 
-        // ~50 fps — keep low enough that BT stack (prio 5) is never starved
-        vTaskDelay(20 / portTICK_PERIOD_MS);
+        // Pace to DISPLAY_FRAME_PERIOD_MS: sleep only for what is left of the
+        // period, but always at least 2 ms. The I2C transfer itself blocks on
+        // the driver (CPU free), and this task runs below the BT stack.
+        const uint32_t elapsedMs = millis() - frameStartMs;
+        const uint32_t sleepMs   = (elapsedMs + 2 < DISPLAY_FRAME_PERIOD_MS)
+                                 ? DISPLAY_FRAME_PERIOD_MS - elapsedMs : 2;
+        vTaskDelay(pdMS_TO_TICKS(sleepMs));
+
+        ++framesSinceReport;
+        const uint32_t now = millis();
+        if (now - lastReportMs >= 5000) {
+          extern bool debugEnabled;
+          if (debugEnabled)
+            Serial.printf("[UI] Scope %.1f fps rendered, %.1f fps sent (last frame %u ms)\n",
+                          framesSinceReport * 1000.0f / (now - lastReportMs),
+                          framesSent * 1000.0f / (now - lastReportMs), elapsedMs);
+          framesSinceReport = 0;
+          framesSent        = 0;
+          lastReportMs      = now;
+        }
       }
     }
 
@@ -190,6 +236,7 @@ class ScopeDisplayU8g2 {
 
     bool begin(uint8_t i2cAddress = DISPLAY_I2C_ADDRESS) {
       (void)i2cAddress;
+      display->setBusClock(DISPLAY_I2C_CLOCK_HZ); // U8g2 applies it on every transfer
       display->begin();
       display->setPowerSave(0);
       display->setFontMode(0);

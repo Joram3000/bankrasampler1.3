@@ -44,6 +44,7 @@ public:
 	virtual float getDelayTimeMs() const = 0;
 	virtual float getDelayFeedback() const = 0;
 	virtual float getFilterQ() const = 0;
+	virtual float getBtFilterQ() const = 0; // resonance of the BT filter (BT mode)
 	virtual bool getDebugMode() const = 0;
 	virtual bool getPotInverted() const = 0;
 	virtual bool getBtEnabled() const = 0;
@@ -52,6 +53,7 @@ public:
 	virtual void setOneShot(bool oneShot) = 0;
 	virtual void setDelayTimeMs(float ms) = 0;
 	virtual void setFilterQ(float q) = 0;
+	virtual void setBtFilterQ(float q) = 0;
 	virtual void setDebugMode(bool debug) = 0;
 	virtual void setPotInverted(bool inverted) = 0;
 	virtual void setBtEnabled(bool enabled) = 0;
@@ -59,6 +61,14 @@ public:
 	virtual void setDelayFeedback(float feedback) = 0;
 	virtual void setFeedbackLowpassCutoff(float hz) = 0;
 	virtual void setFeedbackHighpassCutoff(float hz) = 0;
+
+	// Hide menu items that do nothing in the current mode.
+	// No delay (BT mode) hides the delay items.
+	virtual void setDelayAvailable(bool available) = 0;
+	// Unsupported: build without BT. Off: BT build, BT disabled (only the
+	// on/off toggle is shown). On: BT running (all BT items shown).
+	enum class BtMenu : uint8_t { Unsupported, Off, On };
+	virtual void setBtMenu(BtMenu mode) = 0;
 
 	// Override the maximum adjustable delay time at runtime (e.g. after
 	// dynamic heap measurement). Clamped values in the UI will update accordingly.

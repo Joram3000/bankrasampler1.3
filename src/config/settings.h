@@ -11,10 +11,6 @@ constexpr float DEFAULT_DELAY_TIME_MS    = 280.0f;
 constexpr float DELAY_TIME_MIN_MS        = 50.0f;
 constexpr float DELAY_TIME_MAX_MS        = 300.0f;
 
-// BT mode: shorter delay to free ~13 KB of heap for the Bluetooth stack
-constexpr float BT_DELAY_TIME_MAX_MS    = 150.0f;
-constexpr float BT_DEFAULT_DELAY_TIME_MS = 120.0f;
-
 // Default BT enabled state (overridden by settings.txt on SD card).
 constexpr bool DEFAULT_BT_ENABLED = true;
 constexpr float DELAY_TIME_STEP_MS       = 10.0f;
@@ -33,6 +29,13 @@ constexpr float LOW_PASS_Q         = 0.5f;
 constexpr float LOW_PASS_Q_MIN      = 0.1f;
 constexpr float LOW_PASS_Q_MAX      = 1.0f;
 constexpr float LOW_PASS_Q_STEP     = 0.05f;
+
+// BT filter (delay switch while BT is connected) — allows real resonance.
+// Its output level is compensated by 1/sqrt(Q) above Q=1 (see smooth_lowpass.h).
+constexpr float BT_FILTER_Q        = 3.0f;
+constexpr float BT_FILTER_Q_MIN    = 0.7f;
+constexpr float BT_FILTER_Q_MAX    = 8.0f;
+constexpr float BT_FILTER_Q_STEP   = 0.25f;
 
 // dit zit in de feedback chain
 // high pass filter defaults
