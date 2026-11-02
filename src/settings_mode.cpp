@@ -1,9 +1,11 @@
 #include "settings_mode.h"
+#include "audio/bluetooth.h"
 #include "config/config.h"
 #include "config/settings.h"
 #include "storage/settings_storage.h"
 #include "storage/pin_config_storage.h"
 #include "storage/sample_map.h"
+#include "transfer_mode.h"
 #include "ui.h"
 #include "SettingsScreen.h"
 
@@ -21,6 +23,7 @@ OperatingMode currentMode = OperatingMode::Performance;
 bool btEnabledAtBoot = DEFAULT_BT_ENABLED;
 static unsigned long btClearRebootAt = 0; // non-zero = reboot scheduled
 #endif
+static unsigned long transferRebootAt = 0; // non-zero = transfer-mode reboot scheduled
 
 // Persisted settings state (used to seed UI on boot)
 float currentFilterQ = LOW_PASS_Q;
@@ -38,6 +41,14 @@ uint32_t settingsModeLastPoll = 0;
 
 SettingsUiDependencies settingsDeps{};
 
+// Writes everything the settings screen edits to the SD card.
+void persistSettings() {
+  saveSettingsToSd(settingsScreen);
+  for (int i = 0; i < (int)BUTTON_COUNT; ++i)
+    setSampleIndexForButton(i, settingsScreen->getSampleIndex(i));
+  saveSampleMap();
+}
+
 void applyOperatingModeChange(OperatingMode newMode) {
   if (newMode == OperatingMode::Settings && !settingsScreen) {
     Serial.println("Settings mode requested but unavailable; reverting to performance mode");
@@ -54,10 +65,7 @@ void applyOperatingModeChange(OperatingMode newMode) {
       setScopeDisplaySuspended(false);
       if (settingsDeps.releaseButtons) settingsDeps.releaseButtons();
       if (currentMode == OperatingMode::Settings) {
-        saveSettingsToSd(settingsScreen);
-        for (int i = 0; i < (int)BUTTON_COUNT; ++i)
-          setSampleIndexForButton(i, settingsScreen->getSampleIndex(i));
-        saveSampleMap();
+        persistSettings();
 #ifdef BLUETOOTH_MODE
         if (settingsScreen && settingsScreen->getBtEnabled() != btEnabledAtBoot) {
           Serial.println("[BT] bt_enabled changed — rebooting...");
@@ -87,13 +95,16 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
     return;
   }
 
-  // Inform the screen of the runtime delay range immediately.
-  if (runtimeMaxDelayMs > 0) settingsScreen->setDelayTimeMax(static_cast<float>(runtimeMaxDelayMs));
+  // Inform the screen of the runtime delay range immediately. Without a delay
+  // (BT mode) the delay items are hidden, but the stored delay time must
+  // survive load + save, so allow the largest delay any mode can have.
+  settingsScreen->setDelayTimeMax(runtimeMaxDelayMs > 0 ? runtimeMaxDelayMs
+                                                        : DELAY_TIME_ABS_MAX_MS);
 
   // Only show menu items that do something in this mode.
   settingsScreen->setDelayAvailable(deps.maxDelayMs > 0);
 #ifdef BLUETOOTH_MODE
-  extern bool btEnabled; // loaded from settings.txt before this runs
+  // btEnabled was loaded from settings.txt before this runs.
   settingsScreen->setBtMenu(btEnabled ? ISettingsScreen::BtMenu::On
                                       : ISettingsScreen::BtMenu::Off);
 #else
@@ -119,11 +130,15 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
       settingsDeps.delayEffect->setFeedback(feedback);
     }
   });
-  // Apply filter Q changes from the UI to the live filter effect and persist in local state
   settingsScreen->setFilterQCallback([](float q) {
-    // store new Q value; the audio thread (main) will read the live value
-    // from the settings screen when updating the filter coefficients
     currentFilterQ = q;
+    if (settingsDeps.setFilterQ) settingsDeps.setFilterQ(q);
+  });
+  settingsScreen->setBtFilterQCallback([](float q) {
+    if (settingsDeps.setBtFilterQ) settingsDeps.setBtFilterQ(q);
+  });
+  settingsScreen->setOneShotCallback([](bool on) {
+    if (settingsDeps.setOneShot) settingsDeps.setOneShot(on);
   });
 
   // Forward feedback filter cutoff changes to the delay effect when available.
@@ -146,7 +161,6 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
 
 #ifdef BLUETOOTH_MODE
   settingsScreen->setBtEnabledCallback([](bool on) {
-    extern bool btEnabled;
     btEnabled = on;
   });
   settingsScreen->setBtClearBondsCallback([]() {
@@ -168,11 +182,20 @@ void initSettingsUi(const SettingsUiDependencies& deps) {
   settingsScreen->setBtEnabledCallback(nullptr);
   settingsScreen->setBtClearBondsCallback(nullptr);
 #endif
+  // Only checks and schedules: the reboot runs from checkSettingsMode() on
+  // the loop task, after the menu has shown "Rebooting".
+  settingsScreen->setTransferModeCallback([]() {
+    if (!transferAppInstalled()) return false;
+    transferRebootAt = millis() + 300;
+    return true;
+  });
 
   settingsScreen->setZoom(DEFAULT_HORIZ_ZOOM);
   settingsScreen->setDelayTimeMs(currentDelayTimeMs);
   settingsScreen->setDelayFeedback(currentDelayFeedback);
   settingsScreen->setFilterQ(currentFilterQ);
+  settingsScreen->setBtFilterQ(BT_FILTER_Q);
+  settingsScreen->setOneShot(ONE_SHOT_DEFAULT);
   // seed feedback filter cutoffs from defaults so the UI shows sensible values
   settingsScreen->setFeedbackLowpassCutoff(FB_LOW_PASS_CUTOFF_HZ);
   settingsScreen->setFeedbackHighpassCutoff(FB_HIGH_PASS_CUTOFF_HZ);
@@ -222,6 +245,11 @@ void checkSettingsMode(uint32_t now) {
     ESP.restart();
   }
 #endif
+  if (transferRebootAt > 0 && now >= transferRebootAt) {
+    transferRebootAt = 0;
+    persistSettings();
+    rebootIntoTransferApp();
+  }
   if ((now - settingsModeLastPoll) < SETTINGS_POLL_INTERVAL_MS) return;
   settingsModeLastPoll = now;
 
@@ -281,8 +309,4 @@ OperatingMode getOperatingMode() {
 void setOperatingMode(OperatingMode mode) {
   // Ensure mode transitions run the same enter/exit logic as the physical switch
   applyOperatingModeChange(mode);
-}
-
-ISettingsScreen* getSettingsScreen() {
-  return settingsScreen;
 }

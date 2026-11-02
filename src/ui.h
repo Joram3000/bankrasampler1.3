@@ -39,3 +39,4 @@ void setHudDelayAvailable(bool available); // false hides the delay indicator (B
 void setHudBtFilter(int state);            // -1 hidden, 0 off, 1 on (shown where "del" was)
 void setHudPotValue(float normalizedValue, bool isFilter);  // 0..1
 void setHudBtConnected(bool connected);
+void setHudBattery(int percent);            // -1 hidden, 0..100 shown top-left

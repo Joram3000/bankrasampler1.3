@@ -1,20 +1,20 @@
 #pragma once
 
 #include <AudioTools.h>
-#include "prealloc_delay.h"
+#include "audio/prealloc_delay.h"
 #include <cstdint>
 #include <functional>
-
-class ISettingsScreen;
-
 
 enum class OperatingMode { Performance, Settings };
 
 struct SettingsUiDependencies {
   PreallocDelay* delayEffect = nullptr;
-  void* filterEffect = nullptr;
   std::function<void()> releaseButtons;
   std::function<void(int)> playSamplePreview;
+  // Live settings, pushed on every change (also while loading settings.txt).
+  std::function<void(bool)> setOneShot;
+  std::function<void(float)> setFilterQ;
+  std::function<void(float)> setBtFilterQ;
   uint16_t maxDelayMs = 0; // allocated delay maximum; 0 = no delay (BT mode)
 };
 
@@ -37,6 +37,3 @@ bool handleSettingsButtonInput(size_t buttonIndex, bool active);
 OperatingMode getOperatingMode();
 
 void setOperatingMode(OperatingMode mode);
-
-// Optional access to the live settings screen.
-ISettingsScreen* getSettingsScreen();

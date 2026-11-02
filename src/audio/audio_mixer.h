@@ -160,7 +160,7 @@ private:
     bool            catchingUp    = false;
 };
 
-// Defined in main.cpp when BLUETOOTH_MODE is enabled.
+// Defined in bluetooth.cpp.
 extern BTRingBuffer btAudioBuffer;
 #endif // BLUETOOTH_MODE
 

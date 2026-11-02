@@ -1,0 +1,9 @@
+# Name,   Type, SubType,  Offset,   Size,     Flags
+# huge_app.csv with its unused spiffs area and part of app0 turned into a
+# second app partition for the WiFi transfer app (src/transfer_app/).
+# nvs/otadata/app0 offsets are unchanged, so BT pairings survive.
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xe000,   0x2000,
+app0,     app,  ota_0,    0x10000,  0x270000,
+transfer, app,  ota_1,    0x280000, 0x170000,
+coredump, data, coredump, 0x3F0000, 0x10000,

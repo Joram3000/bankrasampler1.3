@@ -22,12 +22,14 @@ static volatile float hudPotValue       = 0.0f;
 static volatile bool  hudIsFilter       = false;
 static volatile bool  hudBtConnected    = false;
 static volatile int   hudBtFilter       = -1;
+static volatile int   hudBatteryPct     = -1;
 
 void setHudDelayEnabled(bool on)                { hudDelayEnabled = on; }
 void setHudDelayAvailable(bool available)       { hudDelayAvailable = available; }
 void setHudBtFilter(int state)                  { hudBtFilter = state; }
 void setHudPotValue(float v, bool isFilter)     { hudPotValue = v; hudIsFilter = isFilter; }
 void setHudBtConnected(bool connected)          { hudBtConnected = connected; }
+void setHudBattery(int percent)                 { hudBatteryPct = percent; }
 
 // --- Display objects ---------------------------------------------------------
 static int16_t waveformBuffer[NUM_WAVEFORM_SAMPLES];
@@ -84,6 +86,22 @@ static void drawHud(U8G2 *d) {
         d->drawBox(bx - 1, 0, (int)(btW + 2), 9);
         d->setDrawColor(1);
         d->drawStr(bx, 7, btTxt);
+    }
+
+    // Top-left: battery icon, fill proportional to charge; blinks below 10%.
+    int bat = hudBatteryPct;
+    if (bat >= 0) {
+        constexpr int bw = 12, bh = 6;
+        d->setDrawColor(0);
+        d->drawBox(0, 0, bw + 3, bh + 2);
+        d->setDrawColor(1);
+        bool blinkOff = bat < 10 && (millis() / 500) % 2;
+        if (!blinkOff) {
+            d->drawFrame(0, 0, bw, bh);
+            d->drawBox(bw, 2, 1, bh - 4);  // terminal nub
+            int fill = (bat * (bw - 2) + 50) / 100;
+            if (fill > 0) d->drawBox(1, 1, fill, bh - 2);
+        }
     }
 
     d->setDrawColor(1); // restore

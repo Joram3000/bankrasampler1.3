@@ -33,6 +33,7 @@ public:
 		ITEM_SAMPLE_3,
 		ITEM_SAMPLE_4,
 		ITEM_SAMPLE_5,
+		ITEM_WIFI_TRANSFER,
 		ITEM_COUNT
 	};
 
@@ -46,10 +47,12 @@ public:
 	void setFeedbackLowpassCutoffCallback(std::function<void(float)> cb) override { feedbackLowpassCutoffCallback = cb; }
 	void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) override { feedbackHighpassCutoffCallback = cb; }
 	void setFilterQCallback(std::function<void(float)> cb) override { filterQCallback = cb; }
+	void setBtFilterQCallback(std::function<void(float)> cb) override { btFilterQCallback = cb; }
 	void setDebugModeCallback(std::function<void(bool)> cb) override { debugModeCallback = cb; }
 	void setPotInvertedCallback(std::function<void(bool)> cb) override { potInvertedCallback = cb; }
 	void setBtEnabledCallback(std::function<void(bool)> cb) override { btEnabledCallback = cb; }
 	void setBtClearBondsCallback(std::function<void()> cb) override { btClearBondsCallback = cb; }
+	void setTransferModeCallback(std::function<bool()> cb) override { transferModeCallback = cb; }
 
 	void setSampleList(int count, const char* const* names) override {
 		sampleCount = count;
@@ -153,7 +156,7 @@ public:
 	void setFeedbackLowpassCutoff(float hz) override { feedbackLowpassCutoff = clampValue(hz, FB_LOW_PASS_MIN_HZ, FB_LOW_PASS_MAX_HZ); markDirty(); if (feedbackLowpassCutoffCallback) feedbackLowpassCutoffCallback(feedbackLowpassCutoff); }
 	void setFeedbackHighpassCutoff(float hz) override { feedbackHighpassCutoff = clampValue(hz, FB_HIGH_PASS_MIN_HZ, FB_HIGH_PASS_MAX_HZ); markDirty(); if (feedbackHighpassCutoffCallback) feedbackHighpassCutoffCallback(feedbackHighpassCutoff); }
 	void setFilterQ(float q) override { filterQ = clampValue(q, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX); markDirty(); notifyFilterQChanged(); }
-	void setBtFilterQ(float q) override { btFilterQ = clampValue(q, BT_FILTER_Q_MIN, BT_FILTER_Q_MAX); markDirty(); }
+	void setBtFilterQ(float q) override { btFilterQ = clampValue(q, BT_FILTER_Q_MIN, BT_FILTER_Q_MAX); markDirty(); notifyBtFilterQChanged(); }
 	void setDebugMode(bool debug) override { debugMode = debug; markDirty(); if (debugModeCallback) debugModeCallback(debug); }
 	void setPotInverted(bool inv) override { potInverted = inv; markDirty(); if (potInvertedCallback) potInvertedCallback(inv); }
 	void setBtEnabled(bool en) override { btEnabled = en; markDirty(); if (btEnabledCallback) btEnabledCallback(en); }
@@ -183,6 +186,8 @@ private:
 	bool potInverted = false;
 	bool btEnabled = DEFAULT_BT_ENABLED;
 	unsigned long btClearDoneUntil = 0;
+	unsigned long transferMsgUntil = 0;
+	bool transferStarting = false; // result of the last transfer request
 	bool   delayAvailable = true;
 	BtMenu btMenu         = BtMenu::Unsupported;
 
@@ -207,10 +212,12 @@ private:
 	std::function<void(float)> feedbackLowpassCutoffCallback;
 	std::function<void(float)> feedbackHighpassCutoffCallback;
 	std::function<void(float)> filterQCallback;
+	std::function<void(float)> btFilterQCallback;
 	std::function<void(bool)> debugModeCallback;
 	std::function<void(bool)> potInvertedCallback;
 	std::function<void(bool)> btEnabledCallback;
 	std::function<void()> btClearBondsCallback;
+	std::function<bool()> transferModeCallback;
 	std::function<void(int)> samplePreviewCallback;
 
 	static constexpr int kBtnCount = 6;
@@ -223,6 +230,7 @@ private:
 	void notifyDelayTimeChanged() { if (delayTimeCallback) delayTimeCallback(delayTimeMs); }
 	void notifyDelayFeedbackChanged() { if (delayFeedbackCallback) delayFeedbackCallback(delayFeedback); }
 	void notifyFilterQChanged() { if (filterQCallback) filterQCallback(filterQ); }
+	void notifyBtFilterQChanged() { if (btFilterQCallback) btFilterQCallback(btFilterQ); }
 	void adjustCurrentItem(int delta) {
 		
 		switch (selection) {
@@ -250,7 +258,7 @@ private:
 				applyAdjustment(filterQ, delta, LOW_PASS_Q_MIN, LOW_PASS_Q_MAX, LOW_PASS_Q_STEP, [this]{ notifyFilterQChanged(); });
 				break;
 			case ITEM_BT_FILTER_Q:
-				applyAdjustment(btFilterQ, delta, BT_FILTER_Q_MIN, BT_FILTER_Q_MAX, BT_FILTER_Q_STEP, nullptr);
+				applyAdjustment(btFilterQ, delta, BT_FILTER_Q_MIN, BT_FILTER_Q_MAX, BT_FILTER_Q_STEP, [this]{ notifyBtFilterQChanged(); });
 				break;
 			case ITEM_DEBUG:
 				if (delta != 0) setDebugMode(!debugMode);
@@ -280,6 +288,13 @@ private:
 				if (samplePreviewCallback) samplePreviewCallback(bi);
 				break;
 			}
+			case ITEM_WIFI_TRANSFER:
+				if (delta != 0 && transferModeCallback) {
+					transferStarting = transferModeCallback();
+					transferMsgUntil = millis() + 1500;
+					markDirty();
+				}
+				break;
          }
      }
  
@@ -314,6 +329,7 @@ private:
 			"Btn 4",
 			"Btn 5",
 			"Btn 6",
+			"WiFi upload",
 		};
 		const int rowHeight = 10;
 		const int highlightHeight = rowHeight + 2;
@@ -369,6 +385,7 @@ private:
 				case ITEM_POT_INVERTED: snprintf(valbuf, sizeof(valbuf), "%s", potInverted ? "On" : "Off"); break;
 				case ITEM_BT_ENABLED: snprintf(valbuf, sizeof(valbuf), "%s", btEnabled ? "On" : "Off"); break;
 				case ITEM_BT_CLEAR_BONDS: snprintf(valbuf, sizeof(valbuf), "%s", (millis() < btClearDoneUntil) ? "Rebooting" : "< >"); break;
+				case ITEM_WIFI_TRANSFER: snprintf(valbuf, sizeof(valbuf), "%s", (millis() < transferMsgUntil) ? (transferStarting ? "Rebooting" : "No app") : "< >"); break;
 				case ITEM_SAMPLE_0: case ITEM_SAMPLE_1: case ITEM_SAMPLE_2:
 				case ITEM_SAMPLE_3: case ITEM_SAMPLE_4: case ITEM_SAMPLE_5: {
 					int bi = idx - ITEM_SAMPLE_0;

@@ -21,6 +21,7 @@ static const uint8_t MUX_CHANNELS = 8; // 74HC151 heeft 8 kanalen
 
 // change-detect state
 static bool muxLastState[MUX_CHANNELS];
+static uint32_t muxLastChangeMs[MUX_CHANNELS]; // last accepted change, for debounce
 static MuxChangeCallback muxChangeCallback = nullptr;
 
 // Mutex used for ISR/Timer critical sections (ESP32 portMUX)
@@ -82,10 +83,14 @@ static void initMuxState() {
 }
 
 static void scanMuxAndPrint() {
+  const uint32_t now = millis();
   for (uint8_t ch = 0; ch < MUX_CHANNELS; ++ch) {
   bool state = readMuxActiveState(ch); // externe pullups => activeLow
-    if (state != muxLastState[ch]) {
+    // Leading-edge debounce: the first edge counts right away, bounce after
+    // it is ignored for BUTTON_DEBOUNCE_MS.
+    if (state != muxLastState[ch] && now - muxLastChangeMs[ch] >= BUTTON_DEBOUNCE_MS) {
       muxLastState[ch] = state;
+      muxLastChangeMs[ch] = now;
       if (muxChangeCallback) {
         muxChangeCallback(ch, state);
       } else {
@@ -134,4 +139,29 @@ void muxScanTick() {
 
 void setMuxChangeCallback(MuxChangeCallback callback) {
   muxChangeCallback = callback;
+}
+
+// --- Input task (Core 0, prio 2) --------------------------------------------
+// Polls the mux every 1 ms. Priority below BT stack so A2DP is never starved.
+// Static stack — reserved at link time, never fragments the heap at runtime.
+static StaticTask_t inputTaskTCB;
+static StackType_t  inputTaskStack[4096];
+
+static void inputTask(void *) {
+  for (;;) {
+    muxScanTick();
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+
+void startMuxScanTask() {
+  xTaskCreateStaticPinnedToCore(
+      inputTask, "inputTask",
+      sizeof(inputTaskStack) / sizeof(StackType_t),
+      nullptr,
+      2,              // prio 2: above idle, below BT stack (prio 5)
+      inputTaskStack,
+      &inputTaskTCB,
+      0               // Core 0
+  );
 }

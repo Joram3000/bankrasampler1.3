@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // zoom screen defaults
 constexpr float DEFAULT_HORIZ_ZOOM = 0.2f; //>1 = inzoomen (minder samples weergegeven), <1 = uitzoomen
 constexpr float DEFAULT_VERT_SCALE = 1.0f; // amplitude schaal factor // zou ook naar settings kunnen 
@@ -10,6 +12,8 @@ constexpr bool ONE_SHOT_DEFAULT = false;
 constexpr float DEFAULT_DELAY_TIME_MS    = 280.0f;
 constexpr float DELAY_TIME_MIN_MS        = 50.0f;
 constexpr float DELAY_TIME_MAX_MS        = 300.0f;
+// Largest delay buffer, however much heap is free (only without BT).
+constexpr uint16_t DELAY_TIME_ABS_MAX_MS = 750;
 
 // Default BT enabled state (overridden by settings.txt on SD card).
 constexpr bool DEFAULT_BT_ENABLED = true;

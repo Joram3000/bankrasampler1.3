@@ -29,10 +29,14 @@ public:
 	virtual void setFeedbackHighpassCutoffCallback(std::function<void(float)> cb) = 0;
 	
 	virtual void setFilterQCallback(std::function<void(float)> cb) = 0;
+	virtual void setBtFilterQCallback(std::function<void(float)> cb) = 0;
 	virtual void setDebugModeCallback(std::function<void(bool)> cb) = 0;
 	virtual void setPotInvertedCallback(std::function<void(bool)> cb) = 0;
 	virtual void setBtEnabledCallback(std::function<void(bool)> cb) = 0;
 	virtual void setBtClearBondsCallback(std::function<void()> cb) = 0;
+	// Fired when the user starts WiFi transfer mode (reboots the device).
+	// Returns false when transfer mode is unavailable.
+	virtual void setTransferModeCallback(std::function<bool()> cb) = 0;
 
 	// Get current feedback filter cutoff values (UI -> persistence)
 	virtual float getFeedbackLowpassCutoff() const = 0;

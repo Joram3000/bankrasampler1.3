@@ -17,6 +17,8 @@ constexpr int INPUT_MUX_PIN_Y = 17;
 
 constexpr int POT_PIN                = 34;
 constexpr int SWITCH_PIN_SETTINGS_MODE = 35;
+// Battery sense: BAT+ ──100k──┬──100k── GND, midpoint to this pin (ADC1 only).
+constexpr int BATTERY_ADC_PIN          = 36;
 
 //  constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 7, 2,3, 6, 5, 4};
 // constexpr std::array<uint8_t, 6> BUTTON_CHANNEL_ON_MUX = { 3, 2,4, 5, 6, 7};
