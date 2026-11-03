@@ -9,6 +9,7 @@
 #include "bluetooth.h"
 #include "prealloc_delay.h"
 #include "smooth_lowpass.h"
+#include "wav_data_decoder.h"
 #include "config/config.h"
 #include "config/pins.h"
 #include "config/settings.h"
@@ -18,7 +19,7 @@
 // --- Audio system -----------------------------------------------------------
 static AudioInfo info(44100, 2, 16);
 static AudioSourceSD source("/", "wav");
-static WAVDecoder decoder;
+static WavDataDecoder decoder;
 
 static DelayMixerStream mixer;
 static FilteredStream<int16_t, float> filteredStream(mixer, 2);
@@ -31,7 +32,7 @@ static PreallocDelay delayEffect1;
 
 // --- Task infrastructure ----------------------------------------------------
 // Static stack — reserved at link time, never fragments the heap at runtime.
-// Measured peak ~2.4 KB with BT streaming and debug prints on ('d' report).
+// Measured peak ~2.4 KB with BT streaming and debug prints on.
 static StaticTask_t audioTaskTCB;
 static StackType_t  audioTaskStack[5 * 1024];
 
@@ -55,12 +56,8 @@ static void sendAudioCmd(AudioCmdType type, int index = -1) {
         Serial.println(F("[AUDIO] Command queue full — command dropped"));
 }
 
-// Playback + fade state lives only in audioTask — never read by other tasks.
-static int   currentSample  = -1;
-static bool  fadingOut      = false;
-static int   fadeTicksLeft  = 0;
-// BUTTON_FADE_MS=30 -> 30/1 = 30 ticks, +5 for AudioTools ramp drain margin.
-static constexpr int FADE_DRAIN_TICKS = BUTTON_FADE_MS + 5;
+// Playback state lives only in audioTask — never read by other tasks.
+static int currentSample = -1;
 
 // Written by the settings menu (input task), read by audioTask and stopSample().
 static volatile bool oneShot = ONE_SHOT_DEFAULT;
@@ -69,7 +66,6 @@ static volatile bool oneShot = ONE_SHOT_DEFAULT;
 static void handleAudioCmd(const AudioCmd &cmd) {
     switch (cmd.type) {
     case AudioCmdType::Play:
-        fadingOut = false;
         // The fader has one length for both directions. Short here: setPath()
         // fades out a still-playing sample with it, then the new one fades in.
         player.setFadeTime(SAMPLE_FADE_IN_MS);
@@ -81,10 +77,8 @@ static void handleAudioCmd(const AudioCmd &cmd) {
     case AudioCmdType::Stop:
         // Release of a button whose sample is no longer the active one.
         if (cmd.index != currentSample) break;
-        fadingOut     = true;
-        fadeTicksLeft = FADE_DRAIN_TICKS;
         player.setFadeTime(BUTTON_FADE_MS);
-        player.setActive(false); // starts internal AudioTools fade ramp
+        player.setActive(false); // writes the fade-out right away
         currentSample = -1;
         break;
 
@@ -111,52 +105,39 @@ static void audioTask(void *) {
         AudioCmd cmd;
         while (xQueueReceive(audioCmdQueue, &cmd, 0) == pdTRUE) handleAudioCmd(cmd);
 
-        bool   active = player.isActive();
         size_t copied = 0;
 
-        if (active || fadingOut) {
+        if (player.isActive()) {
             // Drain loop: push audio until I2S DMA is full or no more data.
             // mixer.write() reads btAudioBuffer on every call, so BT is
             // consumed proportional to I2S output.
             for (int i = 0; i < 16; ++i) {
+                // Past the data chunk the file only holds metadata: the
+                // sample has ended (copied stays 0).
+                if (decoder.atDataEnd()) break;
                 // Glide the filter cutoff once per block, never mid-block.
                 insertFilter.tick(info.sample_rate);
                 size_t n = player.copy();
                 copied += n;
                 if (n == 0) break;
+                // Once the DMA is full every copy blocks ~5.8 ms: a button
+                // press must not wait for the rest of the drain.
+                if (uxQueueMessagesWaiting(audioCmdQueue) > 0) break;
             }
-            active = player.isActive();
 
-#ifdef BLUETOOTH_MODE
-            // SD-card stall: keep BT flowing once the jitter buffer is close to
-            // overflowing — copied == 0 for a single tick alone is not a stall.
-            if (copied == 0 && btAudioBuffer.available() > btAudioBuffer.highWater()) {
-                size_t btFrames = btAudioBuffer.available() / (2 * sizeof(int16_t));
-                mixer.pumpSilenceFrames(std::min<size_t>(btFrames, 256u));
-            }
-#endif
-
-            if (fadingOut) {
-                if (fadeTicksLeft > 0) --fadeTicksLeft;
-                else fadingOut = false;
+            // One-shot end detection
+            if (oneShot && currentSample >= 0 && copied == 0) {
+                player.setFadeTime(BUTTON_FADE_MS);
+                player.setActive(false);
+                currentSample = -1;
+                if (DEBUGMODE) Serial.println(F("[AUDIO] One-shot end"));
             }
         }
 
-        // When idle: pump silence so the delay tail drains, the scope stays
+        // Nothing copied (idle, or a sample that ended while its button is
+        // still held): pump silence so the delay tail drains, the scope stays
         // alive and (in BT mode) the BT audio from the jitter buffer is mixed in.
-        if (!active && !fadingOut) {
-            mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
-        }
-
-        // One-shot end detection
-        if (oneShot && currentSample >= 0 && active && copied == 0) {
-            fadingOut     = true;
-            fadeTicksLeft = FADE_DRAIN_TICKS;
-            player.setFadeTime(BUTTON_FADE_MS);
-            player.setActive(false);
-            currentSample = -1;
-            if (DEBUGMODE) Serial.println(F("[AUDIO] One-shot end"));
-        }
+        if (copied == 0) mixer.pumpSilenceFrames(kScopeSilenceFramesPerLoop);
 
 #ifdef BLUETOOTH_MODE
         if (DEBUGMODE && btIsConnected()) reportBtBufferStats();
@@ -231,10 +212,18 @@ void initAudioCommandQueue() {
 // begin() keeps it.
 void initPlayer() {
     player.setOutput(filteredStream);
-    player.setAutoNext(false);
     player.setSilenceOnInactive(false);
     player.setFadeTime(BUTTON_FADE_MS);
     player.begin();
+    // begin() takes auto-next from the source, which is on for SD. Off, or a
+    // button held past the end of its sample plays on into the next file.
+    player.setAutoNext(false);
+    // At the end of a file the copier sleeps 10 ms per copy() — in audioTask,
+    // which may only ever block on I2S. That chopped the delay tail into
+    // pieces while a button was held past the end of its sample, and made
+    // each trigger after a finished sample 10 ms late (the fade-out of the
+    // old file reads at its end), often longer than the DMA.
+    player.getStreamCopy().setDelayOnNoData(0);
     player.setActive(false);
     if (DEBUGMODE) Serial.println(F("[INIT] Player OK"));
 }

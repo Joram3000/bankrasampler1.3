@@ -25,10 +25,13 @@ extern bool    runtimeMuxActiveLow;
 constexpr bool MUX_ACTIVE_LOW_DEFAULT = true;
 
 
-constexpr uint32_t BUTTON_FADE_MS = 30;
+// Fade-out when a button is released (or a one-shot ends). The player writes
+// only one more block after a stop (1024 bytes ≈ 5.8 ms of 16-bit stereo), so
+// the ramp must end inside it: a longer one is cut off part-way and clicks —
+// which the delay then repeats. (30 ms got cut off at ~80% volume.)
+constexpr uint32_t BUTTON_FADE_MS = 5;
 // Fade-in when a sample starts: just enough against a click on a sample that
-// doesn't start at zero. A BUTTON_FADE_MS ramp would swallow the attack of a
-// hit — it only reaches half volume after 15 ms.
+// doesn't start at zero. A longer ramp would swallow the attack of a hit.
 constexpr uint32_t SAMPLE_FADE_IN_MS = 2;
 // After an accepted mux change, further changes on that channel are ignored
 // this long (contact bounce). The change itself is acted on immediately.

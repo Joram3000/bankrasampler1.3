@@ -75,21 +75,6 @@ void reportBtBufferStats() {
     }
 }
 
-// Counters run since the previous report — or since the last 5 s in debug
-// mode, where reportBtBufferStats() resets them too. Underruns also count a
-// pause on the phone.
-void printBtStatus() {
-    if (!btEnabled) {
-        Serial.println(F("[DIAG] BT disabled"));
-        return;
-    }
-    uint32_t drops     = btAudioBuffer.getAndResetDropCount();
-    uint32_t underruns = btAudioBuffer.getAndResetUnderrunCount();
-    Serial.printf("[DIAG] BT %s, jitter buffer %u B, %u drop(s), %u underrun(s)\n",
-                  btConnected ? "connected" : "not connected",
-                  (unsigned)btAudioBuffer.available(), drops, underruns);
-}
-
 // --- Bluetooth callbacks -----------------------------------------------------
 // Runs in the BT stack task (Core 0). Only feeds the jitter buffer — it never
 // touches I2S, so it never blocks the BT stack and never races audioTask.

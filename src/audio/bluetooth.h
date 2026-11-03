@@ -23,7 +23,4 @@ bool btIsConnected();
 
 // Debug: jitter-buffer health and heap low-water mark, at most every 5 s.
 void reportBtBufferStats();
-
-// Diagnostics report: connection state and jitter-buffer counters.
-void printBtStatus();
 #endif

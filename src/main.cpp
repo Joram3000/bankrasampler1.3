@@ -12,7 +12,6 @@
 #include "audio/bluetooth.h"
 #include "battery.h"
 #include "controls.h"
-#include "diagnostics.h"
 #include "input/button.h"
 #include "input/button_wizard.h"
 #include "input/mux.h"
@@ -24,7 +23,7 @@
 
 // setup() and loop() run in loopTask, whose stack comes from the heap that
 // the BT stack needs. Measured peak ~2.5 KB (setup incl. BT init) of the
-// default 8 KB ('d' report).
+// default 8 KB.
 SET_LOOP_TASK_STACK_SIZE(5 * 1024);
 
 static void initDisplay() {
@@ -59,8 +58,6 @@ void setup() {
   Serial.begin(115200);
    AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
   delay(800);      // rust voor voeding na Serial.begin / power-on
-  initDiagnostics();
-  diagMark("start");
   // Before anything that can send commands (mux callback, BT callbacks).
   initAudioCommandQueue();
   initSd();
@@ -69,10 +66,8 @@ void setup() {
   loadBtEnabledFromSd();
 #endif
   initSampleMap();
-  diagMark("sd");
   delay(300);
   initDisplay();
-  diagMark("display");
   delay(200);
 
   // Apply button channels from compile-time defaults into runtime button array.
@@ -91,13 +86,11 @@ void setup() {
   delay(200);
   initAudio();
   initPlayer();
-  diagMark("audio");
 
 #ifdef BLUETOOTH_MODE
     if (btEnabled) {
         delay(500); // rust voor BT radio init — voorkomt brownout door stroompiek
         initBluetooth();
-        diagMark("bluetooth");
         // The BT stack needs all the heap it can get (its stream setup alone
         // takes ~16 KB), and the few tens of ms of delay that would fit are
         // useless anyway — so BT mode has no delay at all.
@@ -108,7 +101,6 @@ void setup() {
 #endif
     uint16_t dynMaxMs = btRunning() ? 0 : computeMaxDelayMs();
     initDelayAndMixer(dynMaxMs, delaySendSwitchOn());
-    diagMark("delay");
 
     SettingsUiDependencies settingsDeps;
     settingsDeps.delayEffect       = &getDelayEffect();
@@ -125,7 +117,6 @@ void setup() {
     // Last: both tasks run straight away and rely on everything above.
     startAudioTask();
     startMuxScanTask();
-    diagMark("ready");
 
     if (DEBUGMODE)
         Serial.printf("[INIT] Done — heap: %d free, delay max: %u ms\n",
@@ -144,8 +135,6 @@ void loop() {
     if (getOperatingMode() == OperatingMode::Settings) {
         updateSettingsScreenUi();
     }
-
-    pollDiagnostics();
 
     // Yield so loop() does not spin at 100% on Core 1; nothing here needs
     // more than a few hundred updates per second.
