@@ -81,7 +81,7 @@ class PreallocDelay : public audio_tools::AudioEffect {
     const int32_t mixed = static_cast<int32_t>((1.0f - depth_) * input + depth_ * delayed);
     const float feedbackSample = processFeedback(static_cast<float>(delayed));
     const float toWrite = static_cast<float>(input) + feedback_ * feedbackSample;
-    buffer_[writeIndex_] = clip(static_cast<int32_t>(std::round(toWrite)));
+    buffer_[writeIndex_] = clip(static_cast<int32_t>(std::round(saturate(toWrite))));
 
     ++writeIndex_;
     if (writeIndex_ >= delaySamples_) writeIndex_ = 0;
@@ -184,6 +184,24 @@ class PreallocDelay : public audio_tools::AudioEffect {
     if (requested > buffer_.size()) requested = buffer_.size();
     delaySamples_ = requested;
     if (writeIndex_ >= delaySamples_) writeIndex_ = 0;
+  }
+
+  // Soft knee for the feedback loop. Repeats played in time with the delay
+  // add up (up to 1 / (1 - feedback), ~8x at 0.88), and a hard clip there is
+  // stored and then repeated as digital distortion. Linear up to the knee
+  // (-3 dBFS), above it bends smoothly towards full scale, like tape.
+  static float saturate(float x) {
+    constexpr float kFull = 32767.0f;
+    constexpr float kKnee = 0.7f * kFull;
+    const float ax = fabsf(x);
+    if (ax <= kKnee) return x;
+    // tanh(over), rational approximation: exact enough, and 1 from over = 3 on.
+    const float over = (ax - kKnee) / (kFull - kKnee);
+    const float t = over < 3.0f
+                  ? over * (27.0f + over * over) / (27.0f + 9.0f * over * over)
+                  : 1.0f;
+    const float y = kKnee + (kFull - kKnee) * t;
+    return x < 0.0f ? -y : y;
   }
 
   effect_t clip(int32_t v) const {

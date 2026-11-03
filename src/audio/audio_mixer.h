@@ -4,6 +4,7 @@
 #include <AudioTools.h>
 #include "AudioTools/CoreAudio/AudioEffects/AudioEffect.h"
 #include <AudioTools/AudioLibs/AudioEffectsSuite.h>
+#include "peak_limiter.h"
 #include "prealloc_delay.h"
 #include <cmath>
 #include <vector>
@@ -168,7 +169,7 @@ extern BTRingBuffer btAudioBuffer;
 // Wraps a PreallocDelay into an AudioTools ModifyingStream.
 // Mixing pipeline:
 //   dry signal → delay send → delay process → wet return
-//   output = dry + wet [+ bt (BT mode only)]
+//   output = limiter(dry + wet [+ bt (BT mode only)])
 class DelayMixerStream : public ModifyingStream {
 public:
     DelayMixerStream() = default;
@@ -220,6 +221,7 @@ public:
         channels    = std::max<int>(1, static_cast<int>(ai.channels));
         frameBytes  = static_cast<size_t>(sampleBytes * channels);
         if (delay && ai.sample_rate > 0) delay->setSampleRate(ai.sample_rate);
+        if (ai.sample_rate > 0) limiter.setSampleRate(static_cast<float>(ai.sample_rate));
     }
 
     void setStream(Stream &in) override { p_in = &in; }
@@ -251,6 +253,7 @@ public:
 
         const size_t totalSamples = frames * static_cast<size_t>(channels);
         if (totalSamples > temp16.size()) return 0; // safety — should never happen
+        if (channels > kMaxChannels) return 0;
 
         const int16_t *in = reinterpret_cast<const int16_t *>(data);
 
@@ -275,38 +278,27 @@ public:
         for (size_t f = 0; f < frames; ++f) {
             const size_t base = f * static_cast<size_t>(channels);
 
-            if (!delayActive) {
-                // No delay buffer: bypass all delay math, just mix dry (+ BT).
-                for (int ch = 0; ch < channels; ++ch) {
-                    float mixed = dryLevel * static_cast<float>(in[base + ch]);
-#ifdef BLUETOOTH_MODE
-                    mixed += btLevel * static_cast<float>(btTemp[base + ch]);
-#endif
-                    temp16[base + ch] = clamp16(mixed);
-                }
-                continue;
+            // No delay buffer (BT mode): bypass all delay math.
+            float wet = 0.0f;
+            if (delayActive) {
+                // Mono send from the average of all channels.
+                float monoSum = 0.0f;
+                for (int ch = 0; ch < channels; ++ch)
+                    monoSum += static_cast<float>(in[base + ch]);
+                int16_t sendSample = clamp16(sendLevel * monoSum / static_cast<float>(channels));
+                wet = wetLevel * static_cast<float>(delay->process(sendSample));
             }
 
-            // Compute mono send from average of all channels.
-            float monoSum = 0.0f;
-            for (int ch = 0; ch < channels; ++ch)
-                monoSum += static_cast<float>(in[base + ch]);
-            float mono = monoSum / static_cast<float>(channels);
-
-            // Run mono through the delay.
-            int16_t  sendSample = clamp16(sendLevel * mono);
-            effect_t wetSample  = delay->process(sendSample);
-
-            // Reconstruct per-channel output.
+            float frame[kMaxChannels];
             for (int ch = 0; ch < channels; ++ch) {
-                float x     = static_cast<float>(in[base + ch]);
-                float mixed = dryLevel * x
-                            + wetLevel * static_cast<float>(wetSample);
+                frame[ch] = dryLevel * static_cast<float>(in[base + ch]) + wet;
 #ifdef BLUETOOTH_MODE
-                mixed += btLevel * static_cast<float>(btTemp[base + ch]);
+                frame[ch] += btLevel * static_cast<float>(btTemp[base + ch]);
 #endif
-                temp16[base + ch] = clamp16(mixed);
             }
+            limiter.process(frame, channels);
+            for (int ch = 0; ch < channels; ++ch)
+                temp16[base + ch] = clamp16(frame[ch]);
         }
 
         const size_t bytes = totalSamples * sizeof(int16_t);
@@ -334,7 +326,9 @@ private:
 
     // Processing buffers sized for 512 frames × 2 channels (I2S buffer_size=512).
     static constexpr size_t kMaxSamples = 512 * 2;
+    static constexpr int    kMaxChannels = 2;
     std::vector<int16_t> temp16;
+    PeakLimiter          limiter;
 #ifdef BLUETOOTH_MODE
     std::vector<int16_t> btTemp;
     SmoothedLowPass btFilter; // declared before L/R: they reference its coefficients

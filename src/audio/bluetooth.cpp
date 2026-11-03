@@ -115,10 +115,19 @@ void initBluetooth() {
 
     btAudioBuffer.begin();
 
-    // Release BLE heap — we only use Classic BT (A2DP).
-    // Frees ~30 KB of contiguous DRAM for the Classic BT controller.
-    // Must be called before btStart() / a2dp_sink.start().
+    // Release the BLE controller memory (~5 KB) to the heap — we only use
+    // Classic BT (A2DP). Must be called before the controller is initialised.
     esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
+    // The controller must then run Classic-only. Arduino's btStart(), which
+    // a2dp_sink.start() calls, would enable it in dual mode, and that still
+    // uses the released memory as BLE exchange memory — where the heap had
+    // just put the btController task, which then crashed on connecting.
+    // Started here, btStart() finds it running and leaves it alone.
+    esp_bt_controller_config_t btCfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+    btCfg.mode = ESP_BT_MODE_CLASSIC_BT;
+    if (esp_bt_controller_init(&btCfg) != ESP_OK
+        || esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT) != ESP_OK)
+        Serial.println(F("[ERROR] BT controller start failed"));
 
     a2dp_sink.set_stream_reader(btAudioDataCallback, false);
     a2dp_sink.set_sample_rate_callback([](uint16_t rate) {
